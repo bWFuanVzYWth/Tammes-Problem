@@ -1,18 +1,38 @@
 #pragma once
 
+#include <math.h>
+
 typedef struct {
     double x;
     double y;
     double z;
 } vec3;
 
-vec3 add(vec3 a, vec3 b);
-vec3 sub(vec3 a, vec3 b);
-vec3 mul(vec3 a, vec3 b);
+inline void add(vec3* a, vec3* b) {
+    a->x += b->x;
+    a->y += b->y;
+    a->z += b->z;
+}
 
-vec3 scale(double a, vec3 b);
-vec3 normalize(vec3 a);
+inline void sub(vec3* a, vec3* b) {
+    a->x -= b->x;
+    a->y -= b->y;
+    a->z -= b->z;
+}
 
-double dot(vec3 a, vec3 b);
+inline void scale(vec3* a, double b) {
+    a->x *= b;
+    a->y *= b;
+    a->z *= b;
+}
 
-vec3 cross(vec3 a, vec3 b);
+inline void normalize(vec3* a) {
+    double rcp_length = 1.0 / sqrt(a->x * a->x + a->y * a->y + a->z * a->z);
+    a->x *= rcp_length;
+    a->y *= rcp_length;
+    a->z *= rcp_length;
+}
+
+inline double dot(vec3* a, vec3* b) {
+    return a->x * b->x + a->y * b->y + a->z * b->z;
+}

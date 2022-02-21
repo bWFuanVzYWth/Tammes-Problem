@@ -24,7 +24,7 @@ typedef struct {
     int z;
 } int3;
 
-vec3 sphere_point_picking(dsfmt_t* dsfmt) {
+void sphere_point_picking(vec3* v, dsfmt_t* dsfmt) {
     // https://mathworld.wolfram.com/SpherePointPicking.html
     double x1, x2, tmp_1, tmp_2;
     do {
@@ -33,16 +33,15 @@ vec3 sphere_point_picking(dsfmt_t* dsfmt) {
         tmp_1 = x1 * x1 + x2 * x2;
     } while (tmp_1 >= 1.0);
     tmp_2 = 2.0 * sqrt(1.0 - tmp_1);
-    vec3 n = {x1 * tmp_2, x2 * tmp_2, 1.0 - 2.0 * tmp_1};
-    return n;
+    v->x = x1 * tmp_2;
+    v->y = x2 * tmp_2;
+    v->z = 1.0 - 2.0 * tmp_1;
 }
 
-int3 hash_point(vec3 point, size_t n) {
-    int3 hash;
-    hash.x = (int)((point.x * 0.5 + 0.5) * n);
-    hash.y = (int)((point.y * 0.5 + 0.5) * n);
-    hash.z = (int)((point.z * 0.5 + 0.5) * n);
-    return hash;
+void hash_point(int3* hash, vec3* point, size_t n) {
+    hash->x = (int)((point->x * 0.5 + 0.5) * n);
+    hash->y = (int)((point->y * 0.5 + 0.5) * n);
+    hash->z = (int)((point->z * 0.5 + 0.5) * n);
 }
 
 void find_nearest_point(vec3* point, size_t point_num, size_t* a, size_t* b, void* v_hash_map, point_link* list, size_t n) {
@@ -55,7 +54,9 @@ void find_nearest_point(vec3* point, size_t point_num, size_t* a, size_t* b, voi
     double max_dot = -2.0;
     for (size_t i = 0; i < point_num; i++) {
         //计算需要搜索的网格的坐标范围
-        int3 hash = hash_point(point[i], n);
+        int3 hash;
+        hash_point(&hash, &point[i], n);
+
         int3 hash_min = {max(hash.x - 1, 0), max(hash.y - 1, 0), max(hash.z - 1, 0)};
         int3 hash_max = {min(hash.x + 1, n - 1), min(hash.y + 1, n - 1), min(hash.z + 1, n - 1)};
         for (int x = hash_min.x; x <= hash_max.x; x++) {
@@ -65,7 +66,7 @@ void find_nearest_point(vec3* point, size_t point_num, size_t* a, size_t* b, voi
                         size_t address = hash_map[x][y][z];
                         do {
                             //计算距离，然后取出下一节链表的地址
-                            double now_dot = dot(point[i], list[address].point);
+                            double now_dot = dot(&point[i], &list[address].point);
                             if (now_dot > max_dot) {
                                 max_dot = now_dot;
                                 *a = address;
@@ -108,14 +109,18 @@ double optimize(vec3* point, size_t point_num, dsfmt_t* dsfmt, size_t iteration)
 
     size_t a, b;
     find_nearest_point(point, point_num, &a, &b, hash_map, list, n);
-    double min_max_dot = dot(point[a], point[b]);
+    double min_max_dot = dot(&point[a], &point[b]);
 
     for (size_t i = 0; i < iteration; i++) {
         move_rate = exp(i * (-slow_speed / iteration));
-        min_max_dot = dot(point[a], point[b]);
-        vec3 move_vec = scale(move_rate, sub(point[a], point[b]));
-        point[a] = normalize(add(point[a], move_vec));
-        point[b] = normalize(sub(point[b], move_vec));
+        min_max_dot = dot(&point[a], &point[b]);
+        vec3 move_vec = point[a];
+        sub(&move_vec, &point[b]);
+        scale(&move_vec, move_rate);
+        add(&point[a], &move_vec);
+        normalize(&point[a]);
+        sub(&point[b], &move_vec);
+        normalize(&point[b]);
         find_nearest_point(point, point_num, &a, &b, hash_map, list, n);
     }
 
@@ -133,7 +138,7 @@ double tammes(vec3* point, size_t point_num, int32_t seed, size_t iteration) {
 
     //随机生成点作为初始状态
     for (size_t i = 0; i < point_num; i++)
-        point[i] = sphere_point_picking(&dsfmt);
+        sphere_point_picking(&point[i], &dsfmt);
 
     return optimize(point, point_num, &dsfmt, iteration);
 }
@@ -150,8 +155,8 @@ void output_point(vec3* point, size_t point_num) {
 
 int main(void) {
     size_t point_num = 130;
-    size_t iteration = 1000000;
-    size_t repeat = 128;
+    size_t iteration = 10000000;
+    size_t repeat = 16;
 
     double* angle = (double*)calloc(repeat, sizeof(double));
     vec3** point = (vec3**)calloc(repeat, sizeof(vec3*));
