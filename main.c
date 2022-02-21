@@ -154,9 +154,13 @@ void output_point(vec3* point, size_t point_num) {
 }
 
 int main(void) {
-    size_t point_num = 130;
-    size_t iteration = 10000000;
-    size_t repeat = 16;
+    size_t point_num, iteration, repeat;
+    fprintf(stderr, "提示：可在打开软件前通过>>符号将输出重定向至文件而不是屏幕\n");
+    fprintf(stderr, "请依次输入节点数，优化迭代次数，重试次数，空格分隔，然后回车（示例：130 1000000 128）：\n");
+    // size_t point_num = 130;
+    // size_t iteration = 10000000;
+    // size_t repeat = 16;
+    scanf("%llu %llu %llu", &point_num, &iteration, &repeat);
 
     double* angle = (double*)calloc(repeat, sizeof(double));
     vec3** point = (vec3**)calloc(repeat, sizeof(vec3*));
