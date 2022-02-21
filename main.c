@@ -90,7 +90,7 @@ void find_nearest_point(vec3* point, size_t point_num, size_t* a, size_t* b, voi
 }
 
 double optimize(vec3* point, size_t point_num, dsfmt_t* dsfmt) {
-    const size_t step = 1000000;
+    const size_t step = 10000000;
     const double slow_speed = 15.0;  //玄学，我也是瞎调的
 
     double move_rate = 1.0;
@@ -153,7 +153,7 @@ int main(void) {
     vec3* point[THREAD_NUM];
     int32_t seed_0 = (int32_t)time(NULL);
 
-    size_t point_num = 130;
+    const size_t point_num = 130;
 
 #pragma omp parallel num_threads(THREAD_NUM)
     {
@@ -167,7 +167,7 @@ int main(void) {
     for (size_t i = 0; i < THREAD_NUM; i++)
         if (angle[i] > angle[best_angle_index])
             best_angle_index = i;
-    printf("All thread optimization completed, best_angle_index = %lf\n", angle[best_angle_index]);
+    printf("All thread optimization completed, best_min_angle = %lf\n", angle[best_angle_index]);
     output_point(point[best_angle_index], point_num);
 
     for (size_t i = 0; i < THREAD_NUM; i++)
