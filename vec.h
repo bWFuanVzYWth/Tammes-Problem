@@ -3,10 +3,22 @@
 #include <math.h>
 
 typedef struct {
+    int x;
+    int y;
+    int z;
+} int3;
+
+typedef struct {
     double x;
     double y;
     double z;
 } vec3;
+
+inline void neg(vec3* a){
+    a->x = -a->x;
+    a->y = -a->y;
+    a->z = -a->z;
+}
 
 inline void add(vec3* a, vec3* b) {
     a->x += b->x;
