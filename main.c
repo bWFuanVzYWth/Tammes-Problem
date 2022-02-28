@@ -15,17 +15,18 @@
 
 // struct list* next;     // 8   链表指针
 // vec3 pos;              // 8*3 点的坐标
-// int3 hash3;            // 4*3 空间划分网格
-// int hash;              // 4   散列表
+// size_t hash;           // 8   散列表
+// int3 hash3_min;        // 4*3 空间划分网格中最小值
+// int3 hash3_min;        // 4*3 空间划分网格中最大值
 // size_t id;             // 4   点的编号
 typedef struct list list;
 
 struct list {
     list* next;
     vec3 pos;
+    size_t hash;
     int3 hash3_min;
     int3 hash3_max;
-    int hash;
     uint32_t id;
 };
 
@@ -43,7 +44,7 @@ typedef struct {
 // list* point1;          // 8     序号更小的点指针
 // list* point2;          // 8     序号更大的点指针
 // double cos_angle;      // 8     两点之间的夹角余弦
-// struct avl_node node;  // 8*3+4 AVL树
+// struct avl_node node;  // 8*3+4 AVL树的指针
 typedef struct {
     list* point1;
     list* point2;
@@ -51,15 +52,10 @@ typedef struct {
     struct avl_node node;
 } tree;
 
-// 输出坐标列表
-void output_point(object* object) {
-    putchar('{');
-    for (uint32_t i = 0; i < object->point_num; i++) {
-        printf("{%1.6lf,%1.6lf,%1.6lf}", object->point[i].pos.x, object->point[i].pos.y, object->point[i].pos.z);
-        if (i < object->point_num - 1)
-            putchar(',');
-    }
-    putchar('}');
+// 对于球面上的n点，总存在两个点，其距离<=D (Fejes Tóth, 1943)
+double get_D(uint32_t point_num) {
+    double tmp = 1.0 / sin((M_PI * point_num) / (6 * (point_num - 2)));
+    return sqrt(4.0 - tmp * tmp);
 }
 
 // 在单位圆内随机生成一个点
@@ -67,7 +63,7 @@ void circle_point_picking(double* x1, double* x2, double* r2, dsfmt_t* dsfmt) {
     do {
         *x1 = dsfmt_genrand_open_open(dsfmt) * 2.0 - 1.0;
         *x2 = dsfmt_genrand_open_open(dsfmt) * 2.0 - 1.0;
-        *r2 = *x1 * *x1 + *x2 * *x2;
+        *r2 = (*x1) * (*x1) + (*x2) * (*x2);
     } while (*r2 >= 1.0);
 }
 
@@ -78,27 +74,11 @@ void sphere_point_picking(vec3* v, dsfmt_t* dsfmt) {
     tmp = 2.0 * sqrt(1.0 - r2);
     v->x = x1 * tmp;
     v->y = x2 * tmp;
-    v->z = 1.0 - 2.0 * r2;
+    v->z = -2.0 * r2 + 1.0;
 }
 
-// AVL树的比较函数，所有节点存放都在一个数组里，地址固定，因此地址的大小作为备选的比较方式
-int tree_compare(const void* v_p1, const void* v_p2) {
-    tree* p1 = (tree*)v_p1;
-    tree* p2 = (tree*)v_p2;
-
-    // 先检查是否为同一节点，避免浮点误差
-    if (p1->point1 == p2->point1 && p1->point2 == p2->point2)
-        return 0;
-    // 距离不同时的比较，使用math.h中的函数比较浮点数大小，cos越大夹角越小所以是反的
-    if (isgreater(p1->cos_angle, p2->cos_angle))
-        return -1;
-    if (isless(p1->cos_angle, p2->cos_angle))
-        return 1;
-    // 相等时的处理，应该很少走到这里
-    if ((p1->point1 < p2->point1) || (p1->point1 == p2->point1 && p1->point2 < p2->point2))
-        return -1;
-    else
-        return 1;
+size_t to_hash(int x, int y, int z, const uint32_t N) {
+    return (x * N + y) * N + z;
 }
 
 void refresh_hash(list* point, uint32_t N) {
@@ -115,15 +95,35 @@ void refresh_hash(list* point, uint32_t N) {
     point->hash3_max.y = min(hash3.y + 1, N - 1);
     point->hash3_max.z = min(hash3.z + 1, N - 1);
     // 将空间划分网格坐标映射到hash
-    point->hash = (hash3.x * N + hash3.y) * N + hash3.z;
+    point->hash = to_hash(hash3.x, hash3.y, hash3.z, N);
 }
 
-void hashmap_add(list* point, list** hashmap, const uint32_t N) {
+// AVL树的比较函数，所有节点存放都在一个数组里，地址固定，因此地址的大小作为备选的比较方式
+int tree_compare(const void* v_p1, const void* v_p2) {
+    tree* p1 = (tree*)v_p1;
+    tree* p2 = (tree*)v_p2;
+
+    // 先检查是否为同一节点，避免浮点误差
+    if (p1 == p2)
+        return 0;
+    // 距离不同时的比较，使用math.h中的函数比较浮点数大小，cos越大夹角越小所以是反的
+    if (isless(p2->cos_angle, p1->cos_angle))
+        return -1;
+    if (isless(p1->cos_angle, p2->cos_angle))
+        return 1;
+    // 相等时的处理，应该很少走到这里
+    if (p1 < p2)
+        return -1;
+    else
+        return 1;
+}
+
+void point_add(list* point, list** hashmap, const uint32_t N) {
     point->next = hashmap[point->hash];
     hashmap[point->hash] = point;
 }
 
-void hashmap_remove(list* point, list** hashmap, const uint32_t N) {
+void point_remove(list* point, list** hashmap, const uint32_t N) {
     list* last = (list*)&hashmap[point->hash];
     list* here = hashmap[point->hash];
     while (point != here) {
@@ -133,24 +133,11 @@ void hashmap_remove(list* point, list** hashmap, const uint32_t N) {
     last->next = here->next;
 }
 
-// 对于球面上的n点，总存在两个点，其距离<=D (Fejes Tóth, 1943)
-double get_D(uint32_t point_num) {
-    double tmp = 1.0 / sin((M_PI * point_num) / (6.0 * (point_num - 2)));
-    return sqrt(4.0 - tmp * tmp);
-}
-
-void move_point(list* point, vec3* move_vec, list** hashmap, struct avl_tree* distance, tree* distance_list, const uint32_t N, uint32_t point_num, const double cos_D) {
-    // 从网格中移除这个点
-    hashmap_remove(point, hashmap, N);
-
-    // 从AVL树中移除这个点与附近点的距离，通过网格剪枝
+void distance_remove(list* point, list** hashmap, struct avl_tree* distance, tree* distance_list, const uint32_t N, uint32_t point_num, const double cos_D) {
     for (size_t hash_x = point->hash3_min.x; hash_x <= point->hash3_max.x; hash_x++) {
-        size_t tmp1 = hash_x * N;
         for (size_t hash_y = point->hash3_min.y; hash_y <= point->hash3_max.y; hash_y++) {
-            size_t tmp2 = (tmp1 + hash_y) * N;
             for (size_t hash_z = point->hash3_min.z; hash_z <= point->hash3_max.z; hash_z++) {
-                size_t hash = tmp2 + hash_z;
-                list* p_del = hashmap[hash];
+                list* p_del = hashmap[to_hash(hash_x, hash_y, hash_z, N)];
                 while (p_del != NULL) {
                     double cos_angle = dot(&point->pos, &p_del->pos);
                     if (isgreaterequal(cos_angle, cos_D)) {
@@ -164,20 +151,13 @@ void move_point(list* point, vec3* move_vec, list** hashmap, struct avl_tree* di
             }
         }
     }
+}
 
-    // 移动点
-    add(&point->pos, move_vec);
-    normalize(&point->pos);
-    refresh_hash(point, N);
-
-    // 把这个点与附近点的距离加入AVL树，通过网格剪枝
+void distance_add(list* point, list** hashmap, struct avl_tree* distance, tree* distance_list, const uint32_t N, uint32_t point_num, const double cos_D) {
     for (size_t hash_x = point->hash3_min.x; hash_x <= point->hash3_max.x; hash_x++) {
-        size_t tmp1 = hash_x * N;
         for (size_t hash_y = point->hash3_min.y; hash_y <= point->hash3_max.y; hash_y++) {
-            size_t tmp2 = (tmp1 + hash_y) * N;
             for (size_t hash_z = point->hash3_min.z; hash_z <= point->hash3_max.z; hash_z++) {
-                size_t hash = tmp2 + hash_z;
-                list* p_add = hashmap[hash];
+                list* p_add = hashmap[to_hash(hash_x, hash_y, hash_z, N)];
                 while (p_add != NULL) {
                     double cos_angle = dot(&point->pos, &p_add->pos);
                     if (isgreaterequal(cos_angle, cos_D)) {
@@ -194,54 +174,50 @@ void move_point(list* point, vec3* move_vec, list** hashmap, struct avl_tree* di
             }
         }
     }
-
-    // 把这个点加入网格
-    hashmap_add(point, hashmap, N);
 }
 
-// 传入一个对象，通过算法优化
+void move_point(list* point, vec3* move_vec, list** hashmap, struct avl_tree* distance, tree* distance_list, const uint32_t N, uint32_t point_num, const double cos_D) {
+    // 从网格中移除这个点，然后从树中移除相关的点对
+    point_remove(point, hashmap, N);
+    distance_remove(point, hashmap, distance, distance_list, N, point_num, cos_D);
+    // 移动点
+    add(&point->pos, move_vec);
+    normalize(&point->pos);
+    // 更新坐标，把相关的点对加入树，然后把这个点加入网格
+    refresh_hash(point, N);
+    distance_add(point, hashmap, distance, distance_list, N, point_num, cos_D);
+    point_add(point, hashmap, N);
+}
+
 void tammes(object* object, uint64_t iteration) {
     list* point = object->point;
     uint32_t point_num = object->point_num;
 
-    const double D = get_D(point_num);  //对于球面上的n点，总存在两个点，其距离<=d (Fejes Tóth, 1943)
+    const double D = get_D(point_num);
     const uint32_t N = (uint32_t)floor(2.0 / D);
-    const double cos_D = 1.0 - 0.5 * D * D - 1e-15;  // 余弦定理，-1e-15保证浮点精度
-
-    // 创建空间均匀划分网格，可以理解成hashmap
-    // 迭代后期距离小于<=D的点的连接关系是稀疏图，并且边的长度都很接近，维护网格比邻接表反而要快
-    list** hashmap = (list**)calloc(N * N * N, sizeof(list*));
-    for (uint32_t i = 0; i < point_num; i++) {
-        refresh_hash(&object->point[i], N);
-        hashmap_add(&point[i], hashmap, N);
-    }
+    const double cos_D = 1.0 - 0.5 * D * D - 1e-7;
 
     // 初始化AVL树，然后创建距离矩阵，同时也是AVL树的节点
     struct avl_tree distance;
     avl_tree_init(&distance, &tree_compare, sizeof(tree), AVL_OFFSET(tree, node));
     tree* distance_list = (tree*)calloc(point_num * point_num, sizeof(tree));
+    // 创建空间均匀划分网格，可以理解成hashmap
+    list** hashmap = (list**)calloc(N * N * N, sizeof(list*));
 
-    // 遍历两个点的组合，把所有点的连接关系存进树里，其实这里也能用空间划分网格，但是懒，<1ms
-    for (uint32_t i = 0; i < point_num - 1; i++) {
-        for (uint32_t j = i + 1; j < point_num; j++) {
-            double cos_angle = dot(&point[i].pos, &point[j].pos);
-            if (isgreaterequal(cos_angle, cos_D)) {
-                tree* p = &distance_list[i * point_num + j];
-                p->point1 = &point[i];
-                p->point2 = &point[j];
-                p->cos_angle = cos_angle;
-                avl_tree_add(&distance, p);
-            }
-        }
+    // 更新坐标，把相关的点对加入树，然后把这个点加入网格
+    for (uint32_t i = 0; i < point_num; i++) {
+        refresh_hash(&object->point[i], N);
+        distance_add(&point[i], hashmap, &distance, distance_list, N, point_num, cos_D);
+        point_add(&point[i], hashmap, N);
     }
 
     const double slow_speed = 15.0;  // 这两个玄学，我也是瞎调的
 
-    // 迭代的主循环 TODO 哪怕一点点优化
+    // 迭代的主循环，在这个循环以内的运算需要尽可能优化
     for (uint64_t i = 0; i < iteration; i++) {
         // 取出距离最近的一对点
         tree* nearest = (tree*)avl_tree_first(&distance);
-        // 生成位移向量（已经变成汇编的形状了
+        // 计算位移向量
         double move_rate = exp(i * (-slow_speed / iteration));
         vec3 move_vec_1 = nearest->point1->pos;
         sub(&move_vec_1, &nearest->point2->pos);
@@ -259,7 +235,6 @@ void tammes(object* object, uint64_t iteration) {
     free(distance_list);
 }
 
-// 写入参数、申请内存、设置伪随机种子、生成点的初始排列
 void creat_object(object* object, uint32_t seed, uint32_t point_num) {
     object->point_num = point_num;
     object->point = calloc(point_num, sizeof(list));
@@ -271,13 +246,48 @@ void creat_object(object* object, uint32_t seed, uint32_t point_num) {
     }
 }
 
+#define OUTPUT_PRECISION "1.20"  //改这个可以修改输出的精度
+
+void output_to_file(int3 version, time_t seed_0, object* object_list, uint32_t best_index, uint32_t point_num, uint64_t iteration, uint32_t repeat, double time) {
+    char filename[256] = {0};
+    sprintf(filename, "%u_%1.6lf.txt", point_num, object_list[best_index].angle);
+    FILE* fp = fopen(filename, "w");
+
+    if (fp == NULL)
+        fp = stderr;
+
+    fprintf(fp, "{");
+    for (uint32_t i = 0; i < object_list[best_index].point_num; i++) {
+        if (i < object_list[best_index].point_num - 1)
+            fprintf(fp, "{%" OUTPUT_PRECISION "lf,%" OUTPUT_PRECISION "lf,%" OUTPUT_PRECISION "lf},", object_list[best_index].point[i].pos.x, object_list[best_index].point[i].pos.y, object_list[best_index].point[i].pos.z);
+        else
+            fprintf(fp, "{%" OUTPUT_PRECISION "lf,%" OUTPUT_PRECISION "lf,%" OUTPUT_PRECISION "lf}}\n", object_list[best_index].point[i].pos.x, object_list[best_index].point[i].pos.y, object_list[best_index].point[i].pos.z);
+    }
+
+    fprintf(fp, "version = %d.%d.%d\n", version.x, version.y, version.z);
+    fprintf(fp, "seed_0 = %lu, point_num = %u, iteration = %lu, repeat = %u\n", seed_0, point_num, iteration, repeat);
+    fprintf(fp, "best_index = %u, best_angle = %" OUTPUT_PRECISION "lf, time = %lf\n", best_index, object_list[best_index].angle, time);
+    for (int i = 0; i < repeat; i++)
+        fprintf(fp, "id = %4d , angle = %" OUTPUT_PRECISION "lf\n", i, object_list[i].angle);
+
+    if (fp == stderr) {
+        for (int i = 0; i < 3; i++)
+            fprintf(stderr, "!!!写入文件时发生错误，尝试将结果输出至屏幕，请手动保存后再关闭程序!!!\n");
+        while (1)
+            getchar();
+    }
+    else {
+        fclose(fp);
+    }
+}
+
 int main(void) {
-    uint32_t seed_0 = (uint32_t)time(NULL);
+    const int3 version = {0, 2, 0};
+    time_t seed_0 = time(NULL);
 
     uint32_t point_num;
     uint64_t iteration;
     uint32_t repeat;
-    fprintf(stderr, "提示：可在打开软件前通过>>符号将输出重定向至文件而不是屏幕\n");
     fprintf(stderr, "请依次输入节点数，优化迭代次数，重试次数，用空格分隔，然后按回车（示例：130 1000000 128）：\n");
     scanf("%" PRIu32 " %" PRIu64 " %" PRIu32, &point_num, &iteration, &repeat);
 
@@ -285,12 +295,13 @@ int main(void) {
 
     object* object_list = calloc(repeat, sizeof(object));
 
-    int i;
+    int i;  // 如果写到for的括号里，msvc会报错
 #pragma omp parallel for
     for (i = 0; i < repeat; i++) {
-        uint32_t seed = seed_0 + i;
+        uint32_t seed = (uint32_t)seed_0 + i;
         creat_object(&object_list[i], seed, point_num);
         tammes(&object_list[i], iteration);
+        fprintf(stderr, "线程%4d优化完毕，最小夹角=%1.6lf\n", i, object_list[i].angle);
     }
 
     uint32_t best_index = 0;
@@ -299,8 +310,9 @@ int main(void) {
             best_index = i;
 
     double time_1 = omp_get_wtime();
-    fprintf(stderr, "所有%" PRIu32 "个线程优化完毕，用时%lfs，被最大化的最小夹角 = %lf\n", repeat, time_1 - time_0, object_list[best_index].angle);
-    output_point(&object_list[best_index]);
+    double time = time_1 - time_0;
+    fprintf(stderr, "所有%" PRIu32 "个线程优化完毕，用时%lfs，被最大化的最小夹角=%1.16lf\n", repeat, time, object_list[best_index].angle);
+    output_to_file(version, seed_0, object_list, best_index, point_num, iteration, repeat, time);
 
     for (uint32_t i = 0; i < repeat; i++)
         free(object_list[i].point);
