@@ -265,7 +265,7 @@ void output_to_file(int3 version, time_t seed_0, object* object_list, uint32_t b
     }
 
     fprintf(fp, "version = %d.%d.%d\n", version.x, version.y, version.z);
-    fprintf(fp, "seed_0 = %lu, point_num = %u, iteration = %lu, repeat = %u\n", seed_0, point_num, iteration, repeat);
+    fprintf(fp, "seed_0 = %llu, point_num = %u, iteration = %llu, repeat = %u\n", seed_0, point_num, iteration, repeat);
     fprintf(fp, "best_index = %u, best_angle = %" OUTPUT_PRECISION "lf, time = %lf\n", best_index, object_list[best_index].angle, time);
     for (int i = 0; i < repeat; i++)
         fprintf(fp, "id = %4d , angle = %" OUTPUT_PRECISION "lf\n", i, object_list[i].angle);
