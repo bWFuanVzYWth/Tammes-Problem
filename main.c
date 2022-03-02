@@ -16,7 +16,6 @@
 // struct list* next;     // 8   链表指针
 // vec3 pos;              // 8*3 点的坐标
 // size_t hash;           // 8   散列表
-// int3 hash3             // 4*3 空间划分网格
 // size_t id;             // 4   点的编号
 typedef struct list list;
 
@@ -24,7 +23,6 @@ struct list {
     list* next;
     vec3 pos;
     size_t hash;
-    int3 hash3;
     uint32_t id;
 };
 
@@ -86,8 +84,9 @@ size_t to_hash(int x, int y, int z, const uint32_t N) {
 }
 
 void refresh_hash_all(list* point, uint32_t N) {
-    to_hash3(&point->hash3, &point->pos, N);
-    point->hash = to_hash(point->hash3.x, point->hash3.y, point->hash3.z, N);
+    int3 hash3;
+    to_hash3(&hash3, &point->pos, N);
+    point->hash = to_hash(hash3.x, hash3.y, hash3.z, N);
 }
 
 // AVL树的比较函数，所有节点存放都在一个数组里，地址固定，因此地址的大小作为备选的比较方式
@@ -130,7 +129,7 @@ size_t to_p_tree(list* point1, list* point2, uint32_t point_num) {
 }
 
 void distance_remove(list* point, list** hashmap, list*** hashmap_lut, struct avl_tree* distance, tree* distance_list, const uint32_t N, uint32_t point_num, const double cos_D) {
-    size_t index = 27 * to_hash(point->hash3.x, point->hash3.y, point->hash3.z, N);
+    size_t index = 27 * point->hash;
     for (int i = 0; i < 27 && hashmap_lut[index] != NULL; i++, index++) {
         list* p_del = *(hashmap_lut[index]);
         while (p_del != NULL) {
@@ -147,7 +146,7 @@ void distance_remove(list* point, list** hashmap, list*** hashmap_lut, struct av
 }
 
 void distance_add(list* point, list** hashmap, list*** hashmap_lut, struct avl_tree* distance, tree* distance_list, const uint32_t N, uint32_t point_num, const double cos_D) {
-    size_t index = 27 * to_hash(point->hash3.x, point->hash3.y, point->hash3.z, N);
+    size_t index = 27 * point->hash;
     for (int i = 0; i < 27 && hashmap_lut[index] != NULL; i++, index++) {
         list* p_add = *(hashmap_lut[index]);
         while (p_add != NULL) {
@@ -167,7 +166,7 @@ void distance_add(list* point, list** hashmap, list*** hashmap_lut, struct avl_t
 }
 
 void distance_refresh(list* point, list** hashmap, list*** hashmap_lut, struct avl_tree* distance, tree* distance_list, const uint32_t N, uint32_t point_num, const double cos_D, vec3* new_pos) {
-    size_t index = 27 * to_hash(point->hash3.x, point->hash3.y, point->hash3.z, N);
+    size_t index = 27 * point->hash;
     for (int i = 0; i < 27 && hashmap_lut[index] != NULL; i++, index++) {
         list* p_ref = *(hashmap_lut[index]);
         while (p_ref != NULL) {
@@ -212,8 +211,6 @@ void move_point(list* point, vec3* new_pos, list** hashmap, list*** hashmap_lut,
         point_remove(point, hashmap, N);
         distance_remove(point, hashmap, hashmap_lut, distance, distance_list, N, point_num, cos_D);
         point->pos = *new_pos;
-        point->pos = *new_pos;
-        point->hash3 = new_hash3;
         point->hash = new_hash;
         distance_add(point, hashmap, hashmap_lut, distance, distance_list, N, point_num, cos_D);
         point_add(point, hashmap, N);
