@@ -73,20 +73,11 @@ void sphere_point_picking(vec3* v, dsfmt_t* dsfmt) {
     v->z = -2.0 * r2 + 1.0;
 }
 
-void to_hash3(int3* hash3, vec3* pos, uint32_t N) {
-    hash3->x = (int)((pos->x * 0.5 + 0.5) * N);
-    hash3->y = (int)((pos->y * 0.5 + 0.5) * N);
-    hash3->z = (int)((pos->z * 0.5 + 0.5) * N);
-}
-
-size_t to_hash(int x, int y, int z, const uint32_t N) {
+inline size_t to_hash(vec3* pos, const uint32_t N) {
+    int x = (int)((pos->x * 0.5 + 0.5) * N);
+    int y = (int)((pos->y * 0.5 + 0.5) * N);
+    int z = (int)((pos->z * 0.5 + 0.5) * N);
     return (x * N + y) * N + z;
-}
-
-void refresh_hash_all(list* point, uint32_t N) {
-    int3 hash3;
-    to_hash3(&hash3, &point->pos, N);
-    point->hash = to_hash(hash3.x, hash3.y, hash3.z, N);
 }
 
 // AVL树的比较函数，所有节点存放都在一个数组里，地址固定，因此地址的大小作为备选的比较方式
@@ -109,12 +100,12 @@ int tree_compare(const void* v_p1, const void* v_p2) {
         return 1;
 }
 
-void point_add(list* point, list** hashmap, const uint32_t N) {
+inline void point_add(list* point, list** hashmap, const uint32_t N) {
     point->next = hashmap[point->hash];
     hashmap[point->hash] = point;
 }
 
-void point_remove(list* point, list** hashmap, const uint32_t N) {
+inline void point_remove(list* point, list** hashmap, const uint32_t N) {
     list* last = (list*)(hashmap + point->hash);
     list* here = hashmap[point->hash];
     while (point != here) {
@@ -124,11 +115,11 @@ void point_remove(list* point, list** hashmap, const uint32_t N) {
     last->next = here->next;
 }
 
-size_t to_p_tree(list* point1, list* point2, uint32_t point_num) {
+inline size_t to_p_tree(list* point1, list* point2, uint32_t point_num) {
     return point1->id * point_num + point2->id;
 }
 
-void distance_remove(list* point, list** hashmap, list*** hashmap_lut, struct avl_tree* distance, tree* distance_list, const uint32_t N, uint32_t point_num, const double cos_D) {
+inline void distance_remove(list* point, list** hashmap, list*** hashmap_lut, struct avl_tree* distance, tree* distance_list, const uint32_t N, uint32_t point_num, const double cos_D) {
     size_t index = 27 * point->hash;
     for (int i = 0; i < 27 && hashmap_lut[index] != NULL; i++, index++) {
         list* p_del = *(hashmap_lut[index]);
@@ -145,7 +136,7 @@ void distance_remove(list* point, list** hashmap, list*** hashmap_lut, struct av
     }
 }
 
-void distance_add(list* point, list** hashmap, list*** hashmap_lut, struct avl_tree* distance, tree* distance_list, const uint32_t N, uint32_t point_num, const double cos_D) {
+inline void distance_add(list* point, list** hashmap, list*** hashmap_lut, struct avl_tree* distance, tree* distance_list, const uint32_t N, uint32_t point_num, const double cos_D) {
     size_t index = 27 * point->hash;
     for (int i = 0; i < 27 && hashmap_lut[index] != NULL; i++, index++) {
         list* p_add = *(hashmap_lut[index]);
@@ -165,15 +156,15 @@ void distance_add(list* point, list** hashmap, list*** hashmap_lut, struct avl_t
     }
 }
 
-void distance_refresh(list* point, list** hashmap, list*** hashmap_lut, struct avl_tree* distance, tree* distance_list, const uint32_t N, uint32_t point_num, const double cos_D, vec3* new_pos) {
+inline void distance_refresh(list* point, list** hashmap, list*** hashmap_lut, struct avl_tree* distance, tree* distance_list, const uint32_t N, uint32_t point_num, const double cos_D, vec3* new_pos) {
     size_t index = 27 * point->hash;
     for (int i = 0; i < 27 && hashmap_lut[index] != NULL; i++, index++) {
         list* p_ref = *(hashmap_lut[index]);
         while (p_ref != NULL) {
             if (p_ref != point) {  // 跳过自己
-                double cos_angle = dot(&point->pos, &p_ref->pos);
+                double old_cos_angle = dot(&point->pos, &p_ref->pos);
                 double new_cos_angle = dot(new_pos, &p_ref->pos);
-                int tmp_1 = isgreaterequal(cos_angle, cos_D);
+                int tmp_1 = isgreaterequal(old_cos_angle, cos_D);
                 int tmp_2 = isgreaterequal(new_cos_angle, cos_D);
 
                 list* point1;
@@ -183,15 +174,15 @@ void distance_refresh(list* point, list** hashmap, list*** hashmap_lut, struct a
                     point1 = min(point, p_ref);
                     point2 = max(point, p_ref);
                     p = distance_list + to_p_tree(point1, point2, point_num);
-                }
-                if (tmp_1) {
-                    avl_tree_remove(distance, p);
-                }
-                if (tmp_2) {
-                    p->point1 = point1;
-                    p->point2 = point2;
-                    p->cos_angle = new_cos_angle;
-                    avl_tree_add(distance, p);
+                    if (tmp_1) {
+                        avl_tree_remove(distance, p);
+                    }
+                    if (tmp_2) {
+                        p->point1 = point1;
+                        p->point2 = point2;
+                        p->cos_angle = new_cos_angle;
+                        avl_tree_add(distance, p);
+                    }
                 }
             }
             p_ref = p_ref->next;
@@ -199,11 +190,8 @@ void distance_refresh(list* point, list** hashmap, list*** hashmap_lut, struct a
     }
 }
 
-void move_point(list* point, vec3* new_pos, list** hashmap, list*** hashmap_lut, struct avl_tree* distance, tree* distance_list, const uint32_t N, uint32_t point_num, const double cos_D) {
-    int3 new_hash3;
-    to_hash3(&new_hash3, new_pos, N);
-    size_t new_hash = to_hash(new_hash3.x, new_hash3.y, new_hash3.z, N);
-
+inline void move_point(list* point, vec3* new_pos, list** hashmap, list*** hashmap_lut, struct avl_tree* distance, tree* distance_list, const uint32_t N, uint32_t point_num, const double cos_D) {
+    size_t new_hash = to_hash(new_pos, N);
     if (point->hash == new_hash) {
         distance_refresh(point, hashmap, hashmap_lut, distance, distance_list, N, point_num, cos_D, new_pos);
         point->pos = *new_pos;
@@ -239,7 +227,7 @@ void tammes(object* object, uint64_t iteration) {
     for (int i = 0; i < N; i++) {
         for (int j = 0; j < N; j++) {
             for (int k = 0; k < N; k++) {
-                size_t index = 27 * to_hash(i, j, k, N);
+                size_t index = 27 * ((i * N + j) * N + k);
                 for (int x = max(i - 1, 0); x <= min(i + 1, N - 1); x++) {
                     for (int y = max(j - 1, 0); y <= min(j + 1, N - 1); y++) {
                         for (int z = max(k - 1, 0); z <= min(k + 1, N - 1); z++) {
@@ -255,7 +243,7 @@ void tammes(object* object, uint64_t iteration) {
                             vec3 block_min = {block_min_x, block_min_y, block_min_z};
                             vec3 block_max = {block_max_x, block_max_y, block_max_z};
                             if (dot(&block_min, &block_min) < 1.0 + 1e-7 && dot(&block_max, &block_max) >= 1.0 - 1e-7)
-                                hashmap_lut[index++] = hashmap + to_hash(x, y, z, N);
+                                hashmap_lut[index++] = hashmap + ((x * N + y) * N + z);
                         }
                     }
                 }
@@ -265,7 +253,7 @@ void tammes(object* object, uint64_t iteration) {
 
     // 更新坐标，把相关的点对加入树，然后把这个点加入网格
     for (uint32_t i = 0; i < point_num; i++) {
-        refresh_hash_all(object->point + i, N);
+        object->point[i].hash = to_hash(&object->point[i].pos, N);
         distance_add(point + i, hashmap, hashmap_lut, &distance, distance_list, N, point_num, cos_D);
         point_add(point + i, hashmap, N);
     }
@@ -277,7 +265,7 @@ void tammes(object* object, uint64_t iteration) {
         // 取出距离最近的一对点
         tree* nearest = (tree*)avl_tree_first(&distance);
         // 计算位移向量
-        double move_rate = exp(i * (-slow_speed / iteration));
+        double move_rate = (D / 2.0) * exp(i * (-slow_speed / iteration));
         vec3 move_vec = nearest->point1->pos;
         sub(&move_vec, &nearest->point2->pos);
         scale(&move_vec, move_rate);
