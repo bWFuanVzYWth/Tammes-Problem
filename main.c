@@ -211,7 +211,7 @@ inline void move_point(list* point, vec3* new_pos, list* hashmap, list** hashmap
     }
 }
 
-void tammes(object* object) {
+void tammes(object* object, uint64_t iteration) {
     list* point = object->point;
     list* best_point = object->best_point;
     uint32_t point_num = object->point_num;
@@ -219,7 +219,7 @@ void tammes(object* object) {
     const double D = get_D(point_num);
     const uint32_t N = (uint32_t)floor(2.0 / D);
     const double L = 2.0 / N;
-    const double cos_D = 1.0 - 0.5 * D * D - 1e-7;
+    const double cos_D = 1.0 - 0.5 * D * D - 1e-15;
 
     // 创建AVL树，然后创建距离列表，这个列表既是距离矩阵，也是AVL树的节点
     struct avl_tree distance;
@@ -252,7 +252,7 @@ void tammes(object* object) {
                             double block_min_z = (z + !sign_z) * L - 1.0;
                             vec3 block_min = {block_min_x, block_min_y, block_min_z};
                             vec3 block_max = {block_max_x, block_max_y, block_max_z};
-                            if (dot(&block_min, &block_min) < 1.0 + 1e-7 && dot(&block_max, &block_max) >= 1.0 - 1e-7)
+                            if (dot(&block_min, &block_min) < (1.0 + 1e-15) && dot(&block_max, &block_max) >= (1.0 - 1e-15))
                                 hashmap_lut[index++] = &hashmap[(x * N + y) * N + z];
                         }
                     }
@@ -269,51 +269,39 @@ void tammes(object* object) {
     }
 
     // 一些玄学参数，自己看着调
-    const uint64_t max_try = point_num * point_num;  // 调大点收敛效果会更好，但是会慢很多
-    const double min_rate = D * 1e-5;                // 调小点收敛效果会更好一些，但是会慢很多
-    const double going_down = 0.7;                   // 调大点收敛效果会更好一些，但是会慢很多
+    const double slow_down = 20.0;       // 控制移动的一个参数
+    const double move_rate_0 = D / 2.0;  // 保证够大就行，似乎没啥区别
 
-    double move_rate = D;  // 保证够大就行，似乎没啥区别
-
-    double worst = 2.0;
+    object->angle = 2.0;
 
     // 迭代的主循环，在这个循环以内的运算需要尽可能优化
-    while (move_rate > min_rate) {
-        for (uint64_t try_count = 0; try_count < max_try; try_count++) {
-            // 取出距离最近的一对点
-            tree* nearest = (tree*)avl_tree_first(&distance);
-            // 如果进入了新的最优状态，说明可能还有下降空间，在当前步长下继续迭代
-            if (nearest->cos_angle < worst) {
-                memcpy(best_point, point, sizeof(list) * point_num);
-                object->angle = nearest->cos_angle;  // 这里只是暂存一下余弦值
-                worst = nearest->cos_angle;
-                try_count = 0;
-            }
+    for (uint64_t i = 0; i < iteration; i++) {
+        // 取出距离最近的一对点
+        tree* nearest = (tree*)avl_tree_first(&distance);
 
-            // 计算位移向量
-            vec3 move_vec = nearest->point1->pos;
-            sub(&move_vec, &nearest->point2->pos);
-            scale(&move_vec, move_rate);
-            //计算新的点坐标
-            vec3 new_pos1 = nearest->point1->pos;
-            add(&new_pos1, &move_vec);
-            normalize(&new_pos1);
-            vec3 new_pos2 = nearest->point2->pos;
-            sub(&new_pos2, &move_vec);
-            normalize(&new_pos2);
-
-            // 移动这两个点，然后维护网格和树
-            move_point(nearest->point1, &new_pos1, hashmap, hashmap_lut, &distance, distance_list, N, point_num, cos_D);
-            move_point(nearest->point2, &new_pos2, hashmap, hashmap_lut, &distance, distance_list, N, point_num, cos_D);
+        if (nearest->cos_angle < object->angle) {
+            memcpy(best_point, point, sizeof(list) * point_num);  // 记录最佳值
+            object->angle = nearest->cos_angle;                   // 这里只是暂存一下余弦值
         }
 
-        // 走到这里说明已经卡住了，缩小步长
-        move_rate *= going_down;
+        // 计算位移向量
+        double move_rate = move_rate_0 * exp(i * (-slow_down / iteration));
+        vec3 move_vec = nearest->point1->pos;
+        sub(&move_vec, &nearest->point2->pos);
+        double len = length(&move_vec);
+        scale(&move_vec, move_rate / len);
 
-        // 从之前找到的最优排列开始继续收敛，似乎效果不明显，还慢，干脆不要了
-        // for (int i = 0; i < point_num; i++) {
-        //     move_point(&point[i], &best_point[i].pos, hashmap, hashmap_lut, &distance, distance_list, N, point_num, cos_D);
-        // }
+        //计算新的点坐标
+        vec3 new_pos1 = nearest->point1->pos;
+        add(&new_pos1, &move_vec);
+        normalize(&new_pos1);
+        vec3 new_pos2 = nearest->point2->pos;
+        sub(&new_pos2, &move_vec);
+        normalize(&new_pos2);
+
+        // 移动这两个点，然后维护网格和树
+        move_point(nearest->point1, &new_pos1, hashmap, hashmap_lut, &distance, distance_list, N, point_num, cos_D);
+        move_point(nearest->point2, &new_pos2, hashmap, hashmap_lut, &distance, distance_list, N, point_num, cos_D);
     }
     // 迭代的主循环结束
 
@@ -338,7 +326,7 @@ void creat_random_object(object* object, uint32_t seed, uint32_t point_num) {
 #define OUTPUT_PRECISION "1.16"
 
 // debug，其中的坐标是mathematica中的列表格式
-void output_to_debug(int3 version, time_t seed_0, object* object_list, uint32_t best_index, uint32_t point_num, uint32_t repeat, double time, double adv) {
+void output_to_debug(int3 version, time_t seed_0, object* object_list, uint32_t best_index, uint32_t point_num, uint64_t iteration, uint32_t repeat, double time, double adv) {
     char filename[256] = {0};
     sprintf(filename, "%u_%1.6lf_debug.txt", point_num, object_list[best_index].angle);
     FILE* fp = fopen(filename, "w");
@@ -356,7 +344,7 @@ void output_to_debug(int3 version, time_t seed_0, object* object_list, uint32_t 
     }
 
     fprintf(fp, "version = %d.%d.%d\n", version.x, version.y, version.z);
-    fprintf(fp, "seed_0 = %llu, point_num = %u, repeat = %u\n", seed_0, point_num, repeat);
+    fprintf(fp, "seed_0 = %llu, point_num = %u, iteration = %llu, repeat = %u\n", seed_0, point_num, iteration, repeat);
     fprintf(fp, "best_index = %u, best_angle = %" OUTPUT_PRECISION "lf, time = %lf, adv = %lf\n", best_index, object_list[best_index].angle, time, adv);
     for (int i = 0; i < repeat; i++)
         fprintf(fp, "id = %4d , angle = %" OUTPUT_PRECISION "lf\n", i, object_list[i].angle);
@@ -393,13 +381,15 @@ void output_to_AqiDYBP(object* object_list, uint32_t best_index, uint32_t point_
 }
 
 int main(void) {
-    const int3 version = {0, 2, 4};
+    const int3 version = {0, 2, 5};
     time_t seed_0 = time(NULL);
 
     uint32_t point_num;
+    uint64_t iteration;
     uint32_t repeat;
-    fprintf(stderr, "请依次输入节点数，重试次数，用空格分隔，然后按回车（示例：1922 128）：\n");
-    scanf("%" PRIu32 " %" PRIu32, &point_num, &repeat);
+
+    fprintf(stderr, "请依次输入节点数，迭代次数，重试次数，用空格分隔，然后按回车（示例：130 1000000 128）：\n");
+    scanf("%" PRIu32 " %" PRIu64 " %" PRIu32, &point_num, &iteration, &repeat);
 
     double time_0 = omp_get_wtime();
 
@@ -413,7 +403,7 @@ int main(void) {
     // 对每个初始状态分别开一个线程进行优化
 #pragma omp parallel for
     for (int i = 0; i < repeat; i++) {
-        tammes(object_list + i);
+        tammes(object_list + i, iteration);
         fprintf(stderr, "线程%4d优化完毕，最小夹角=%1.6lf\n", i, object_list[i].angle);
     }
 
@@ -433,7 +423,7 @@ int main(void) {
 
     // 将坐标输出为蓝图
     output_to_AqiDYBP(object_list, best_index, point_num);
-    output_to_debug(version, seed_0, object_list, best_index, point_num, repeat, time, adv);
+    output_to_debug(version, seed_0, object_list, best_index, point_num, iteration, repeat, time, adv);
 
     for (int i = 0; i < repeat; i++) {
         free(object_list[i].point);

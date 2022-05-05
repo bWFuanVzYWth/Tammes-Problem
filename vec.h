@@ -38,6 +38,10 @@ inline void scale(vec3* a, double b) {
     a->z *= b;
 }
 
+inline double length(vec3* a) {
+    return sqrt(a->x * a->x + a->y * a->y + a->z * a->z);
+}
+
 inline void normalize(vec3* a) {
     double rcp_length = 1.0 / sqrt(a->x * a->x + a->y * a->y + a->z * a->z);
     a->x *= rcp_length;
