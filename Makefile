@@ -1,8 +1,9 @@
 tammes :	dSFMT.c dSFMT.h dSFMT-common.h dSFMT-params.h dSFMT-params19937.h\
-			vec.h\
+			vec.c vec.h\
 			avlmini.c avlmini.h\
+			tammes.c tammes.h\
 			main.c
-	gcc -o tammes -Wall -Wfloat-equal -s -static -fexec-charset=GBK -finput-charset=UTF-8 -Ofast -flto -pipe -fopenmp -march=native -mtune=native -ffast-math -finline-functions -finline-limit=99999999 -DDSFMT_MEXP=19937 -DHAVE_SSE2 dSFMT.c avlmini.c main.c
+	gcc -o tammes -Wall -Wfloat-equal -s -static -fexec-charset=GBK -finput-charset=UTF-8 -Ofast -flto -pipe -fopenmp -march=native -mtune=native -ffast-math -finline-functions -finline-limit=99999999 -DDSFMT_MEXP=19937 -DHAVE_SSE2 vec.c dSFMT.c avlmini.c tammes.c main.c
 
 clean :
 	rm tammes.exe

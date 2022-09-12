@@ -1,6 +1,7 @@
 #pragma once
 
 #include <math.h>
+#include <stdint.h>
 
 typedef struct {
     int x;
@@ -14,41 +15,13 @@ typedef struct {
     double z;
 } vec3;
 
-inline void neg(vec3* a) {
-    a->x = -a->x;
-    a->y = -a->y;
-    a->z = -a->z;
-}
+void neg(vec3* a);
 
-inline void add(vec3* a, vec3* b) {
-    a->x += b->x;
-    a->y += b->y;
-    a->z += b->z;
-}
+void add(vec3* a, vec3* b);
+void sub(vec3* a, vec3* b);
+void scale(vec3* a, double b);
 
-inline void sub(vec3* a, vec3* b) {
-    a->x -= b->x;
-    a->y -= b->y;
-    a->z -= b->z;
-}
+double length(vec3* a);
+double dot(vec3* a, vec3* b);
 
-inline void scale(vec3* a, double b) {
-    a->x *= b;
-    a->y *= b;
-    a->z *= b;
-}
-
-inline double length(vec3* a) {
-    return sqrt(a->x * a->x + a->y * a->y + a->z * a->z);
-}
-
-inline void normalize(vec3* a) {
-    double rcp_length = 1.0 / sqrt(a->x * a->x + a->y * a->y + a->z * a->z);
-    a->x *= rcp_length;
-    a->y *= rcp_length;
-    a->z *= rcp_length;
-}
-
-inline double dot(vec3* a, vec3* b) {
-    return a->x * b->x + a->y * b->y + a->z * b->z;
-}
+void normalize(vec3* a);
