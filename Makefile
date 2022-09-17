@@ -1,11 +1,10 @@
-tammes :	dSFMT.c dSFMT.h dSFMT-common.h dSFMT-params.h dSFMT-params19937.h\
-			vec.c vec.h\
-			avlmini.c avlmini.h\
-			tammes.c tammes.h\
-			main.c
-	gcc -o tammes -Wall -Wfloat-equal -s -static -fexec-charset=GBK -finput-charset=UTF-8 -Ofast -flto -pipe -fopenmp -march=native -mtune=native -ffast-math -finline-functions -finline-limit=99999999 -DDSFMT_MEXP=19937 -DHAVE_SSE2 vec.c dSFMT.c avlmini.c tammes.c main.c
+src = $(wildcard *.c)
 
-clean :
-	rm tammes.exe
+debug: $(src)
+	gcc $(src) -o test -Wall -fexec-charset=GBK -fopt-info -fopenmp -DDEBUG_TREESIZE -DDEBUG_TREE_CMP
 
-	
+release: $(src)
+	gcc $(src) -o tammes -Wall -s -static -fexec-charset=GBK -Ofast -flto -pipe -march=native -fopt-info -fopenmp
+
+clean:
+	rm tammes.exe test.exe
