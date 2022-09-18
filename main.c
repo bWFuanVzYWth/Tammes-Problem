@@ -75,7 +75,6 @@ void output_csv(object_t* object) {
     char filename[127] = {0};
     sprintf(filename, "%u_%lf.csv", object->point_num, object->angle);
     FILE* fp = fopen(filename, "wb");
-    fprintf(fp, "x,y,z\n");
     for (int i = 0; i < object->point_num; i++) {
         fprintf(fp, "%1.16lf,%1.16lf,%1.16lf\n", object->pos[i].x, object->pos[i].y, object->pos[i].z);
     }
@@ -142,7 +141,7 @@ int main(void) {
     fprintf(stderr, "所有%" PRIu32 "个线程优化完毕，平均%lf，用时%lfs，被最大化的最小夹角=%1.16lf\n", repeat, adv, time, object[best_index].angle);
 
     // 将坐标输出为蓝图
-    output_mma(&object[best_index]);
+    output_csv(&object[best_index]);
 
     for (int i = 0; i < repeat; i++) {
         object_free(&object[i]);
