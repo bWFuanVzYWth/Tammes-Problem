@@ -40,14 +40,12 @@ int main(void) {
 
     double time_0 = omp_get_wtime();
 
-    // 创建对象列表
     object_t* object = calloc(repeat, sizeof(object_t));
     for (int i = 0; i < repeat; i++) {
         object_init(&object[i], iteration, point_num);
         printf("id=%d, iteration=%" PRIu64 ", point_num=%" PRIu32 "\n", i, object[i].iteration, object[i].point_num);
     }
 
-    // 生产随机初始状态
     for (int i = 0; i < repeat; i++) {
         pcg32_random_t rng = {0, seed_0 + i};
         for (int j = 0; j < object[i].point_num; j++) {
@@ -55,14 +53,12 @@ int main(void) {
         }
     }
 
-    // 对每个初始状态分别开一个线程进行优化
 #pragma omp parallel for
     for (int i = 0; i < repeat; i++) {
         object[i].angle = tammes(object[i].pos, object[i].point_num, object[i].iteration);
         fprintf(stderr, "线程%4d优化完毕，最小夹角=%1.6lf\n", i, object[i].angle);
     }
 
-    // 找出最好的那一个，并评估收敛水平
     double adv = 0.0;
     uint32_t best_index = 0;
     for (int i = 0; i < repeat; i++) {

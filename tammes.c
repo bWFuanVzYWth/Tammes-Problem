@@ -3,33 +3,46 @@
 #define max(a, b) (((a) > (b)) ? (a) : (b))
 #define min(a, b) (((a) < (b)) ? (a) : (b))
 
-// struct point_t* next;     // 8   链表指针
-// f64x3_t pos;              // 8*3 点的坐标
-// uint64_t hash;           // 8   散列表
-// uint32_t id;             // 4   点的编号
 typedef struct point_t point_t;
 typedef struct point_pair_t point_pair_t;
 
+// f64x3_t pos;             // 8*3 点的坐标
+// struct point_t* last;    // 8   链表指针
+// struct point_t* next;    // 8   链表指针
+// uint64_t hash;           // 8   散列表
+// uint32_t id;             // 4   点的编号
 struct point_t {
+    f64x3_t pos;
     point_t* last;
     point_t* next;
-    f64x3_t pos;
     uint64_t hash;
     uint32_t id;
 };
 
-// point_t* point1;          // 8     序号更小的点指针
-// point_t* point2;          // 8     序号更大的点指针
-// double cos_angle;      // 8     两点之间的夹角余弦
-// struct avl_node node;  // 8*3+4 AVL树的指针
+// struct avl_node node;    // 8*3+4 AVL树的指针
+// point_t* point1;         // 8     序号更小的点指针
+// point_t* point2;         // 8     序号更大的点指针
+// double cos;              // 8     两点之间的夹角余弦
 struct point_pair_t {
+    struct avl_node node;
     point_t* point1;
     point_t* point2;
-    double cos_angle;
-    struct avl_node node;
+    double cos;
 };
 
-// AVL树的比较函数，所有节点存放都在一个数组里，地址固定，因此地址的大小作为备选的排序方式
+double cos_to_deg(double cos) {
+    return acos(cos) * (180.0 / M_PI);
+}
+
+double cos_to_dis(double cos) {
+    return sqrt(2.0 - 2.0 * cos);
+}
+
+double dis_to_cos(double dis) {
+    return 1.0 - 0.5 * dis * dis;
+}
+
+// AVL树的比较函数，优先比较点对间的距离，距离相等时比较指针的大小（极小概率）
 int tree_compare(const void* v_p1, const void* v_p2) {
     point_pair_t* p1 = (point_pair_t*)v_p1;
     point_pair_t* p2 = (point_pair_t*)v_p2;
@@ -37,12 +50,12 @@ int tree_compare(const void* v_p1, const void* v_p2) {
     // 先检查是否为同一节点，避免浮点误差
     if (p1 == p2)
         return 0;
-    // 距离不同时的比较，使用math.h中的函数比较浮点数大小，cos越大夹角越小所以是反的
-    if (isless(p2->cos_angle, p1->cos_angle))
+    // 比较点对间的距离，cos越大夹角越小所以是反的
+    if (isless(p2->cos, p1->cos))
         return -1;
-    if (isless(p1->cos_angle, p2->cos_angle))
+    if (isless(p1->cos, p2->cos))
         return 1;
-    // 相等时的处理，应该很少走到这里
+    // 距离相等时比较指针的大小（极小概率）
     if (p1 < p2)
         return -1;
     else
@@ -84,48 +97,48 @@ point_pair_t* to_p_tree(point_pair_t* point_pair, point_t* point1, point_t* poin
     return point_pair + point1->id * point_num + point2->id;
 }
 
-void point_remove(point_t* point, point_t** hashmap_lut, struct avl_tree* distance, point_pair_t* point_pair, const uint32_t point_num, const double cos_D) {
+void point_remove(point_t* point, point_t** hashmap_lut, struct avl_tree* point_pair_tree, point_pair_t* point_pair, const uint32_t point_num, const double cos_D) {
     hashmap_remove(point);
     for (uint64_t index = 28 * point->hash; hashmap_lut[index] != NULL; index++) {
         for (point_t* p_del = hashmap_lut[index]->next; p_del != NULL; p_del = p_del->next) {
-            double cos_angle = f64x3_dot(&point->pos, &p_del->pos);
-            if (isless(cos_angle, cos_D))
+            double cos = f64x3_dot(&point->pos, &p_del->pos);
+            if (isless(cos, cos_D))
                 continue;
             point_t* point1 = min(point, p_del);
             point_t* point2 = max(point, p_del);
             point_pair_t* p = to_p_tree(point_pair, point1, point2, point_num);
-            avl_tree_remove(distance, p);
+            avl_tree_remove(point_pair_tree, p);
         }
     }
 }
 
-void point_add(point_t* point, point_t* hashmap, point_t** hashmap_lut, struct avl_tree* distance, point_pair_t* point_pair, const uint32_t point_num, const double cos_D) {
+void point_add(point_t* point, point_t* hashmap, point_t** hashmap_lut, struct avl_tree* point_pair_tree, point_pair_t* point_pair, const uint32_t point_num, const double cos_D) {
     for (uint64_t index = 28 * point->hash; hashmap_lut[index] != NULL; index++) {
         for (point_t* p_add = hashmap_lut[index]->next; p_add != NULL; p_add = p_add->next) {
-            double cos_angle = f64x3_dot(&point->pos, &p_add->pos);
-            if (isless(cos_angle, cos_D))
+            double cos = f64x3_dot(&point->pos, &p_add->pos);
+            if (isless(cos, cos_D))
                 continue;
             point_t* point1 = min(point, p_add);
             point_t* point2 = max(point, p_add);
             point_pair_t* p = to_p_tree(point_pair, point1, point2, point_num);
             p->point1 = point1;
             p->point2 = point2;
-            p->cos_angle = cos_angle;
-            avl_tree_add(distance, p);
+            p->cos = cos;
+            avl_tree_add(point_pair_tree, p);
         }
     }
     hashmap_add(point, hashmap);
 }
 
-void point_refresh(point_t* point, point_t** hashmap_lut, struct avl_tree* distance, point_pair_t* point_pair, const uint32_t point_num, const double cos_D, f64x3_t* new_pos) {
+void point_refresh(point_t* point, point_t** hashmap_lut, struct avl_tree* point_pair_tree, point_pair_t* point_pair, const uint32_t point_num, const double cos_D, f64x3_t* new_pos) {
     for (uint64_t index = 28 * point->hash; hashmap_lut[index] != NULL; index++) {
         for (point_t* p_ref = hashmap_lut[index]->next; p_ref != NULL; p_ref = p_ref->next) {
             if (p_ref == point)
                 continue;
-            double old_cos_angle = f64x3_dot(&point->pos, &p_ref->pos);
-            double new_cos_angle = f64x3_dot(new_pos, &p_ref->pos);
-            int tmp_1 = isless(old_cos_angle, cos_D);
-            int tmp_2 = isless(new_cos_angle, cos_D);
+            double old_cos = f64x3_dot(&point->pos, &p_ref->pos);
+            double new_cos = f64x3_dot(new_pos, &p_ref->pos);
+            int tmp_1 = isless(old_cos, cos_D);
+            int tmp_2 = isless(new_cos, cos_D);
 
             if (tmp_1 && tmp_2)
                 continue;
@@ -133,28 +146,28 @@ void point_refresh(point_t* point, point_t** hashmap_lut, struct avl_tree* dista
             point_t* point2 = max(point, p_ref);
             point_pair_t* p = to_p_tree(point_pair, point1, point2, point_num);
             if (!tmp_1) {
-                avl_tree_remove(distance, p);
+                avl_tree_remove(point_pair_tree, p);
             }
             if (!tmp_2) {
                 p->point1 = point1;
                 p->point2 = point2;
-                p->cos_angle = new_cos_angle;
-                avl_tree_add(distance, p);
+                p->cos = new_cos;
+                avl_tree_add(point_pair_tree, p);
             }
         }
     }
 }
 
-void move_point(point_t* point, f64x3_t* new_pos, point_t* hashmap, point_t** hashmap_lut, struct avl_tree* distance, point_pair_t* point_pair, const uint32_t N, const uint32_t point_num, const double cos_D) {
+void move_point(point_t* point, f64x3_t* new_pos, point_t* hashmap, point_t** hashmap_lut, struct avl_tree* point_pair_tree, point_pair_t* point_pair, const uint32_t N, const uint32_t point_num, const double cos_D) {
     uint64_t new_hash = to_hash(new_pos, N);
     if (point->hash == new_hash) {
-        point_refresh(point, hashmap_lut, distance, point_pair, point_num, cos_D, new_pos);
+        point_refresh(point, hashmap_lut, point_pair_tree, point_pair, point_num, cos_D, new_pos);
         point->pos = *new_pos;
     } else {
-        point_remove(point, hashmap_lut, distance, point_pair, point_num, cos_D);
+        point_remove(point, hashmap_lut, point_pair_tree, point_pair, point_num, cos_D);
         point->pos = *new_pos;
         point->hash = new_hash;
-        point_add(point, hashmap, hashmap_lut, distance, point_pair, point_num, cos_D);
+        point_add(point, hashmap, hashmap_lut, point_pair_tree, point_pair, point_num, cos_D);
     }
 }
 
@@ -206,24 +219,23 @@ void hashmap_init(point_t** hashmap_lut, point_t* hashmap, const uint32_t N, con
 }
 
 double tammes(f64x3_t* pos, const uint32_t point_num, const uint64_t iteration) {
-    point_t* point = calloc(point_num, sizeof(point_t));
-    pos_to_point(pos, point, point_num);
-
     const double D = get_D(point_num);
+    const double cos_D = dis_to_cos(D);
     const uint32_t N = (uint32_t)floor(2.0 / D);
     const double L = 2.0 / N;
-    const double cos_D = 1.0 - 0.5 * D * D;
 
-    struct avl_tree distance;
-    avl_tree_init(&distance, &tree_compare, sizeof(point_pair_t), AVL_OFFSET(point_pair_t, node));
+    point_t* point = calloc(point_num, sizeof(point_t));
     point_pair_t* point_pair = (point_pair_t*)calloc(point_num * point_num, sizeof(point_pair_t));
     point_t* hashmap = (point_t*)calloc(N * N * N, sizeof(point_t));
     point_t** hashmap_lut = (point_t**)calloc(N * N * N * 28, sizeof(point_t*));
-    hashmap_init(hashmap_lut, hashmap, N, L);
 
+    pos_to_point(pos, point, point_num);
+    hashmap_init(hashmap_lut, hashmap, N, L);
+    struct avl_tree point_pair_tree;
+    avl_tree_init(&point_pair_tree, &tree_compare, sizeof(point_pair_t), AVL_OFFSET(point_pair_t, node));
     for (uint32_t i = 0; i < point_num; i++) {
         point[i].hash = to_hash(&point[i].pos, N);
-        point_add(point + i, hashmap, hashmap_lut, &distance, point_pair, point_num, cos_D);
+        point_add(point + i, hashmap, hashmap_lut, &point_pair_tree, point_pair, point_num, cos_D);
     }
 
     // 一些玄学参数，自己看着调
@@ -234,14 +246,15 @@ double tammes(f64x3_t* pos, const uint32_t point_num, const uint64_t iteration) 
 
     // 迭代的主循环，在这个循环以内尽量优化
     for (uint64_t i = 0; i < iteration; i++) {
-        point_pair_t* nearest = (point_pair_t*)avl_tree_first(&distance);
+        point_pair_t* nearest = (point_pair_t*)avl_tree_first(&point_pair_tree);
 
-        if (nearest->cos_angle < max_cos) {
+        if (nearest->cos < max_cos) {
+            max_cos = nearest->cos;
             point_to_pos(point, pos, point_num);
-            max_cos = nearest->cos_angle;
         }
 
         double move_rate = move_rate_0 * exp(i * (-slow_down / iteration));
+
         f64x3_t move_vec = nearest->point1->pos;
         f64x3_sub(&move_vec, &nearest->point2->pos);
         double len = f64x3_length(&move_vec);
@@ -254,15 +267,15 @@ double tammes(f64x3_t* pos, const uint32_t point_num, const uint64_t iteration) 
         f64x3_sub(&new_pos2, &move_vec);
         f64x3_normalize(&new_pos2);
 
-        move_point(nearest->point1, &new_pos1, hashmap, hashmap_lut, &distance, point_pair, N, point_num, cos_D);
-        move_point(nearest->point2, &new_pos2, hashmap, hashmap_lut, &distance, point_pair, N, point_num, cos_D);
+        move_point(nearest->point1, &new_pos1, hashmap, hashmap_lut, &point_pair_tree, point_pair, N, point_num, cos_D);
+        move_point(nearest->point2, &new_pos2, hashmap, hashmap_lut, &point_pair_tree, point_pair, N, point_num, cos_D);
     }
     // 迭代的主循环结束
 
-    double angle = acos(max_cos) * 180.0 / M_PI;
-
-    free(hashmap);
+    free(point);
     free(point_pair);
+    free(hashmap);
+    free(hashmap_lut);
 
-    return angle;
+    return cos_to_deg(max_cos);
 }
