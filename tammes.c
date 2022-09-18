@@ -218,7 +218,7 @@ void hashmap_init(point_t** hashmap_lut, point_t* hashmap, const uint32_t N, con
                 check_333(hashmap_lut, hashmap, i, j, k, N, L);
 }
 
-double tammes(f64x3_t* pos, const uint32_t point_num, const uint64_t iteration) {
+double tammes(f64x3_t* pos, const uint32_t point_num, const uint64_t iteration, const uint32_t mode) {
     const double D = get_D(point_num);
     const double cos_D = dis_to_cos(D);
     const uint32_t N = (uint32_t)floor(2.0 / D);

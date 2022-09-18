@@ -34,16 +34,32 @@ int main(void) {
     uint32_t point_num;
     uint64_t iteration;
     uint32_t repeat;
+    uint32_t mode;
 
-    fprintf(stderr, "请依次输入节点数，迭代次数，重试次数，用空格分隔，然后按回车（示例：130 1000000 128）：\n");
-    scanf("%" PRIu32 " %" PRIu64 " %" PRIu32, &point_num, &iteration, &repeat);
+    fprintf(stderr, "请依次输入节点数，迭代次数，重试次数，假设对称性，用空格分隔，然后按回车（示例：130 1000000 128 1）：\n");
+    scanf("%" PRIu32 " %" PRIu64 " %" PRIu32 " %" PRIu32, &point_num, &iteration, &repeat, &mode);
+    if (point_num < 2) {
+        fprintf(stderr, "节点数不能小于2\n");
+        return -1;
+    }
+    switch (mode) {
+        case 1:
+            if (point_num % 1 == 0)
+                break;
+        case 2:
+            if (point_num % 2 == 0)
+                break;
+        default:
+            mode = 1;
+            fprintf(stderr, "参数错误，已忽略假设，并将此参数设置为默认值1\n假设对称性暂时只支持：1不对称 2中心对称\n中心对称要求节点数为2的倍数\n");
+            break;
+    }
 
     double time_0 = omp_get_wtime();
 
     object_t* object = calloc(repeat, sizeof(object_t));
     for (int i = 0; i < repeat; i++) {
         object_init(&object[i], iteration, point_num);
-        printf("id=%d, iteration=%" PRIu64 ", point_num=%" PRIu32 "\n", i, object[i].iteration, object[i].point_num);
     }
 
     for (int i = 0; i < repeat; i++) {
@@ -55,7 +71,7 @@ int main(void) {
 
 #pragma omp parallel for
     for (int i = 0; i < repeat; i++) {
-        object[i].angle = tammes(object[i].pos, object[i].point_num, object[i].iteration);
+        object[i].angle = tammes(object[i].pos, object[i].point_num, object[i].iteration, mode);
         fprintf(stderr, "线程%4d优化完毕，最小夹角=%1.6lf\n", i, object[i].angle);
     }
 

@@ -12,6 +12,6 @@
 #include "avlmini.h"
 #include "vec.h"
 
-double tammes(f64x3_t* pos, uint32_t point_num, uint64_t iteration);
+double tammes(f64x3_t* pos, uint32_t point_num, uint64_t iteration, uint32_t mode);
 
 #endif
