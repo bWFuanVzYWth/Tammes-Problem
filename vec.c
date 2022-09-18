@@ -1,5 +1,11 @@
 #include "vec.h"
 
+void f64x3_mov(f64x3_t* a, f64x3_t* b) {
+    a->x = b->x;
+    a->y = b->y;
+    a->z = b->z;
+}
+
 void f64x3_neg(f64x3_t* a) {
     a->x = -a->x;
     a->y = -a->y;

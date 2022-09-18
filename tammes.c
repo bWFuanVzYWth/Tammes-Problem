@@ -245,30 +245,78 @@ double tammes(f64x3_t* pos, const uint32_t point_num, const uint64_t iteration, 
     double max_cos = 1.0;
 
     // 迭代的主循环，在这个循环以内尽量优化
-    for (uint64_t i = 0; i < iteration; i++) {
-        point_pair_t* nearest = (point_pair_t*)avl_tree_first(&point_pair_tree);
+    switch (mode) {
+        case 2:
+            for (uint64_t i = 0; i < iteration; i++) {
+                point_pair_t* nearest = (point_pair_t*)avl_tree_first(&point_pair_tree);
 
-        if (nearest->cos < max_cos) {
-            max_cos = nearest->cos;
-            point_to_pos(point, pos, point_num);
-        }
+                if (nearest->cos < max_cos) {
+                    max_cos = nearest->cos;
+                    point_to_pos(point, pos, point_num);
+                }
 
-        double move_rate = move_rate_0 * exp(i * (-slow_down / iteration));
+                double move_rate = move_rate_0 * exp(i * (-slow_down / iteration));
 
-        f64x3_t move_vec = nearest->point1->pos;
-        f64x3_sub(&move_vec, &nearest->point2->pos);
-        double len = f64x3_length(&move_vec);
-        f64x3_mul(&move_vec, move_rate / len);
+                point_t* p1 = nearest->point1;
+                point_t* p2 = nearest->point2;
+                point_t* p1_mirror = (p1->id & 1) ? p1 - 1 : p1 + 1;
+                point_t* p2_mirror = (p2->id & 1) ? p2 - 1 : p2 + 1;
 
-        f64x3_t new_pos1 = nearest->point1->pos;
-        f64x3_add(&new_pos1, &move_vec);
-        f64x3_normalize(&new_pos1);
-        f64x3_t new_pos2 = nearest->point2->pos;
-        f64x3_sub(&new_pos2, &move_vec);
-        f64x3_normalize(&new_pos2);
+                f64x3_t move_vec = p1->pos;
+                f64x3_sub(&move_vec, &p2->pos);
+                double len = f64x3_length(&move_vec);
+                f64x3_mul(&move_vec, move_rate / len);
 
-        move_point(nearest->point1, &new_pos1, hashmap, hashmap_lut, &point_pair_tree, point_pair, N, point_num, cos_D);
-        move_point(nearest->point2, &new_pos2, hashmap, hashmap_lut, &point_pair_tree, point_pair, N, point_num, cos_D);
+                f64x3_t new_pos1 = p1->pos;
+                f64x3_add(&new_pos1, &move_vec);
+                f64x3_normalize(&new_pos1);
+                f64x3_t new_pos2 = p2->pos;
+                f64x3_sub(&new_pos2, &move_vec);
+                f64x3_normalize(&new_pos2);
+
+                f64x3_t new_pos1_mirror;
+                f64x3_mov(&new_pos1_mirror, &new_pos1);
+                f64x3_neg(&new_pos1_mirror);
+                f64x3_t new_pos2_mirror;
+                f64x3_mov(&new_pos2_mirror, &new_pos2);
+                f64x3_neg(&new_pos2_mirror);
+
+                move_point(p1, &new_pos1, hashmap, hashmap_lut, &point_pair_tree, point_pair, N, point_num, cos_D);
+                move_point(p2, &new_pos2, hashmap, hashmap_lut, &point_pair_tree, point_pair, N, point_num, cos_D);
+                move_point(p1_mirror, &new_pos1_mirror, hashmap, hashmap_lut, &point_pair_tree, point_pair, N, point_num, cos_D);
+                move_point(p2_mirror, &new_pos2_mirror, hashmap, hashmap_lut, &point_pair_tree, point_pair, N, point_num, cos_D);
+            }
+            break;
+        default:
+            for (uint64_t i = 0; i < iteration; i++) {
+                point_pair_t* nearest = (point_pair_t*)avl_tree_first(&point_pair_tree);
+
+                if (nearest->cos < max_cos) {
+                    max_cos = nearest->cos;
+                    point_to_pos(point, pos, point_num);
+                }
+
+                double move_rate = move_rate_0 * exp(i * (-slow_down / iteration));
+
+                point_t* p1 = nearest->point1;
+                point_t* p2 = nearest->point2;
+
+                f64x3_t move_vec = p1->pos;
+                f64x3_sub(&move_vec, &p2->pos);
+                double len = f64x3_length(&move_vec);
+                f64x3_mul(&move_vec, move_rate / len);
+
+                f64x3_t new_pos1 = p1->pos;
+                f64x3_add(&new_pos1, &move_vec);
+                f64x3_normalize(&new_pos1);
+                f64x3_t new_pos2 = p2->pos;
+                f64x3_sub(&new_pos2, &move_vec);
+                f64x3_normalize(&new_pos2);
+
+                move_point(p1, &new_pos1, hashmap, hashmap_lut, &point_pair_tree, point_pair, N, point_num, cos_D);
+                move_point(p2, &new_pos2, hashmap, hashmap_lut, &point_pair_tree, point_pair, N, point_num, cos_D);
+            }
+            break;
     }
     // 迭代的主循环结束
 

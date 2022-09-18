@@ -19,6 +19,8 @@ struct f64x3_t {
     double z;
 };
 
+void f64x3_mov(f64x3_t* a, f64x3_t* b);
+
 void f64x3_neg(f64x3_t* a);
 
 void f64x3_add(f64x3_t* a, f64x3_t* b);
