@@ -25,11 +25,11 @@ Usage: tammes.exe [arg1] [arg2] ...\n\
 Arguments:\n\
 -N=<num>    Number of points, n>=2. Required if no -F.\n\
 -F=<path>   Initialization points by reading from file instead of random.\n\
--S=<1,2>    Assume that the points has n-fold symmetry. default: 1.\n\
--s=<num>    Specify random seed. default: current timestamp, in ns.\n\
+-M=<1,2>    Assume that the points has m-fold symmetry. default: 1.\n\
+-S=<num>    Specify random seed. default: current timestamp, in ns.\n\
 Examples:\n\
 tammes.exe -N=130\n\
-tammes.exe -N=130 -S=2 -s=114514\n\
+tammes.exe -N=130 -M=2 -S=114514\n\
 tammes.exe -F=C:\\tammes\\input.csv"
 
 char* err_tex[] = {
@@ -53,11 +53,11 @@ char* err_tex[] = {
 参数:\n\
 -N=<num>    球面上点的个数, N>=2. 必填，除非启用-F选项\n\
 -F=<path>   从文件读取初始坐标，而不是从随机状态开始\n\
--S=<1,2>    假定点的排列具有S重对称性. 只能填1或2, 默认值=1\n\
--s=<num>    指定伪随机种子. 默认值=精确到纳秒的当前时间.\n\
+-M=<1,2>    假定点的排列具有M重对称性. 只能填1或2, 默认值=1\n\
+-S=<num>    指定伪随机种子. 默认值=精确到纳秒的当前时间.\n\
 示例:\n\
 tammes.exe -N=130\n\
-tammes.exe -N=130 -S=2 -s=114514\n\
+tammes.exe -N=130 -M=2 -S=114514\n\
 tammes.exe -F=C:\\tammes\\input.csv"
 
 char* err_tex[] = {
@@ -103,28 +103,32 @@ uint64_t get_timestamp(void) {
     return (uint64_t)t.tv_sec * 1000000000 + (uint64_t)t.tv_nsec;
 }
 
-error_t init_from_file(FILE* fp, f64x3_t* point, int64_t* point_num) {
+error_t init_from_file(FILE* fp, f64x3_t** point, int64_t* point_num) {
     (*point_num) = 0;
     f64x3_t tmp;
     while (fscanf(fp, "%lf,%lf,%lf", &tmp.x, &tmp.y, &tmp.z) == 3) {
         (*point_num)++;
-        point = realloc(point, sizeof(f64x3_t) * (*point_num));
-        if (point == NULL)
+        (*point) = (f64x3_t*)realloc((*point), sizeof(f64x3_t) * (*point_num));
+        if ((*point) == NULL)
             return out_of_memory;
-        memcpy(&point[(*point_num) - 1], &tmp, sizeof(f64x3_t));
+        memcpy(&(*point)[(*point_num) - 1], &tmp, sizeof(f64x3_t));
     }
     return no_error;
 }
 
-error_t init_from_random(pcg32_random_t* pcg,
-                         f64x3_t* point,
-                         int64_t* point_num) {
-    point = realloc(point, sizeof(f64x3_t) * (*point_num));
-    if (point == NULL)
+error_t init_from_random(pcg32_random_t* pcg, f64x3_t** point, int64_t point_num) {
+    (*point) = (f64x3_t*)realloc((*point), sizeof(f64x3_t) * point_num);
+    if ((*point) == NULL)
         return out_of_memory;
-    for (int i = 0; i < (*point_num); i++)
-        sphere_point_picking(&point[i], pcg);
+    for (int i = 0; i < point_num; i++)
+        sphere_point_picking(&(*point)[i], pcg);
     return no_error;
+}
+
+void dump_to_csv(FILE* fpw, f64x3_t* point, int64_t point_num) {
+    for (int i = 0; i < point_num; i++) {
+        fprintf(fpw, "%1.18lf,%1.18lf,%1.18lf\n", point[i].x, point[i].y, point[i].z);
+    }
 }
 
 error_t check_no_argument(int argc) {
@@ -149,30 +153,29 @@ error_t check_wrong_formart(int n) {
 
 error_t parsing_format(char* argv, config_t* cfg) {
     char argument = 0;
-    char string[MAX_PATH] = {0};
+    char string[MAX_PATH] = { 0 };
     sscanf(argv, "-%c=%s", &argument, string);
     switch (argument) {
-        case 'N':
-            if (cfg->read_from_file == false)
-                return check_wrong_formart(
-                    sscanf(string, "%" PRId64, &cfg->point_num));
-        case 'F':
-            cfg->read_from_file = true;
-            strcpy(cfg->file_path, string);
-            return no_error;
-        case 'S':
-            return check_wrong_formart(
-                sscanf(string, "%" PRId64, &cfg->symmetry));
-        case 's':
-            cfg->use_seed = true;
-            return check_wrong_formart(sscanf(string, "%" PRIu64, &cfg->seed));
-        default:
-            return unknow_argument;
+    case 'N':
+        if (cfg->read_from_file == false)
+            return check_wrong_formart(sscanf(string, "%" PRId64, &cfg->point_num));
+    case 'F':
+        cfg->read_from_file = true;
+        strcpy(cfg->file_path, string);
+        return no_error;
+    case 'M':
+        return check_wrong_formart(
+            sscanf(string, "%" PRId64, &cfg->symmetry));
+    case 'S':
+        cfg->use_seed = true;
+        return check_wrong_formart(sscanf(string, "%" PRIu64, &cfg->seed));
+    default:
+        return unknow_argument;
     }
 }
 
 int main(int argc, char* argv[]) {
-    config_t cfg = {{0}, 0, -1, 1, false, false};
+    config_t cfg = { {0}, 0, -1, 1, false, false };
     error_t error_code = no_error;
     panic(check_no_argument(argc));
     panic(check_illegal_symmetry(cfg.symmetry));
@@ -183,16 +186,23 @@ int main(int argc, char* argv[]) {
     f64x3_t* point = NULL;
 
     if (cfg.read_from_file == true) {
-        FILE* fp = fopen(cfg.file_path, "r");
-        panic(check_file_no_found(fp));
-        panic(init_from_file(fp, point, &(cfg.point_num)));
+        FILE* fpr = fopen(cfg.file_path, "r");
+        panic(check_file_no_found(fpr));
+        panic(init_from_file(fpr, &point, &(cfg.point_num)));
         panic(check_illegal_point_num(cfg.point_num));
-        fclose(fp);
-    } else {
-        panic(check_illegal_point_num(cfg.point_num));
-        pcg32_random_t pcg = {cfg.use_seed ? cfg.seed : get_timestamp(), 0};
-        panic(init_from_random(&pcg, point, &cfg.point_num));
+        fclose(fpr);
     }
+    else {
+        panic(check_illegal_point_num(cfg.point_num));
+        pcg32_random_t pcg = { cfg.use_seed ? cfg.seed : get_timestamp(), 0 };
+        panic(init_from_random(&pcg, &point, cfg.point_num));
+    }
+
+    // tammes();
+
+    FILE* fpw = fopen("tmp.csv", "wb");
+    dump_to_csv(fpw, point, cfg.point_num);
+    fclose(fpw);
 
     return 0;
 
