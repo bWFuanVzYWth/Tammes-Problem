@@ -1,4 +1,8 @@
 *.zip
+*.7z
+*.rar
+
 *.exe
+
 *.txt
 *.csv

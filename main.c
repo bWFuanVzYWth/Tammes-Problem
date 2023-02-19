@@ -1,151 +1,202 @@
 #include <inttypes.h>
-#include <omp.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 #include "random_point.h"
-#include "tammes.h"
-#include "vec.h"
 
-#define OUTPUT_PRECISION "1.16"
+typedef enum error_type {
+    no_error = 0,
+    no_argument,
+    unknow_argument,
+    wrong_formart,
+    illegal_point_num,
+    illegal_symmetry,
+    file_no_found,
+    out_of_memory,
+} error_t;
 
-typedef struct {
-    uint64_t iteration;
-    uint32_t point_num;
-    double angle;
-    f64x3_t* pos;
-} object_t;
+#ifdef ENGLISH_DOC
 
-void object_init(object_t* object, uint64_t iteration, uint32_t point_num) {
-    object->iteration = iteration;
-    object->point_num = point_num;
-    object->pos = calloc(point_num, sizeof(f64x3_t));
-}
+#define HELP_DOC \
+    "https://github.com/bWFuanVzYWth/Tammes-Problem v3.0 MIT license\n\
+Usage: tammes.exe [arg1] [arg2] ...\n\
+Arguments:\n\
+-N=<num>    Number of points, n>=2. Required if no -F.\n\
+-F=<path>   Initialization points by reading from file instead of random.\n\
+-S=<1,2>    Assume that the points has n-fold symmetry. default: 1.\n\
+-s=<num>    Specify random seed. default: current timestamp, in ns.\n\
+Examples:\n\
+tammes.exe -N=130\n\
+tammes.exe -N=130 -S=2 -s=114514\n\
+tammes.exe -F=C:\\tammes\\input.csv"
 
-void object_free(object_t* object) {
-    free(object->pos);
-}
+char* err_tex[] = {
+    "no error",           // no_error
+    "no argument",        // no_argument
+    "unknow argument",    // unknow_argument
+    "wrong formart",      // wrong_formart
+    "illegal point num",  // illegal_point_num
+    "illegal symmetry",   // illegal_symmetry
+    "file no found",      // file_no_found
+    "out of memory"       // out_of_memory
+};
 
-int check_input(uint32_t* point_num, uint32_t* mode) {
-    if (*point_num < 4) {
-        fprintf(stderr, "节点数不能小于4\n");
-        return -1;
+#define ERROR_DOC "!!! Unable to start: %s !!!\n"
+
+#else  // Chinese
+
+#define HELP_DOC \
+    "https://github.com/bWFuanVzYWth/Tammes-Problem v3.0 MIT license\n\
+使用方式: tammes.exe [参数1] [参数2] ...\n\
+参数:\n\
+-N=<num>    球面上点的个数, N>=2. 必填，除非启用-F选项\n\
+-F=<path>   从文件读取初始坐标，而不是从随机状态开始\n\
+-S=<1,2>    假定点的排列具有S重对称性. 只能填1或2, 默认值=1\n\
+-s=<num>    指定伪随机种子. 默认值=精确到纳秒的当前时间.\n\
+示例:\n\
+tammes.exe -N=130\n\
+tammes.exe -N=130 -S=2 -s=114514\n\
+tammes.exe -F=C:\\tammes\\input.csv"
+
+char* err_tex[] = {
+    "没有发现异常",        // no_error
+    "缺少启动参数",        // no_argument
+    "未知启动参数",        // unknow_argument
+    "错误的参数格式",      // wrong_formart
+    "不合理的点数",        // illegal_point_num
+    "不合理的假定对称性",  // illegal_symmetry
+    "找不到文件",          // file_no_found
+    "无法分配内存"         // out_of_memory
+};
+
+#define ERROR_DOC "!!! 无法启动: %s !!!\n"
+
+#endif
+
+#define panic(err)                                    \
+    {                                                 \
+        if (err) {                                    \
+            fprintf(stderr, ERROR_DOC, err_tex[err]); \
+            error_code = err;                         \
+            goto need_help;                           \
+        }                                             \
     }
-    switch (*mode) {
-        case 1:
-            if (*point_num % 1 == 0)
-                break;
-        case 2:
-            if (*point_num % 2 == 0)
-                break;
+
+#define MAX_PATH 32768
+
+typedef enum bool_type { false = 0, true = 1 } bool;
+
+typedef struct config_type {
+    char file_path[MAX_PATH];
+    uint64_t seed;
+    int64_t point_num;
+    int64_t symmetry;
+    bool use_seed;
+    bool read_from_file;
+} config_t;
+
+uint64_t get_timestamp(void) {
+    struct timespec t;
+    clock_gettime(0, &t);
+    return (uint64_t)t.tv_sec * 1000000000 + (uint64_t)t.tv_nsec;
+}
+
+error_t init_from_file(FILE* fp, f64x3_t* point, int64_t* point_num) {
+    (*point_num) = 0;
+    f64x3_t tmp;
+    while (fscanf(fp, "%lf,%lf,%lf", &tmp.x, &tmp.y, &tmp.z) == 3) {
+        (*point_num)++;
+        point = realloc(point, sizeof(f64x3_t) * (*point_num));
+        if (point == NULL)
+            return out_of_memory;
+        memcpy(&point[(*point_num) - 1], &tmp, sizeof(f64x3_t));
+    }
+    return no_error;
+}
+
+error_t init_from_random(pcg32_random_t* pcg,
+                         f64x3_t* point,
+                         int64_t* point_num) {
+    point = realloc(point, sizeof(f64x3_t) * (*point_num));
+    if (point == NULL)
+        return out_of_memory;
+    for (int i = 0; i < (*point_num); i++)
+        sphere_point_picking(&point[i], pcg);
+    return no_error;
+}
+
+error_t check_no_argument(int argc) {
+    return argc >= 2 ? no_error : no_argument;
+}
+
+error_t check_illegal_point_num(int64_t point_num) {
+    return point_num >= 2 ? no_error : illegal_point_num;
+}
+
+error_t check_illegal_symmetry(int64_t symmetry) {
+    return (symmetry == 1 || symmetry == 2) ? no_error : illegal_symmetry;
+}
+
+error_t check_file_no_found(FILE* fp) {
+    return fp != NULL ? no_error : file_no_found;
+}
+
+error_t check_wrong_formart(int n) {
+    return n == 1 ? no_error : wrong_formart;
+}
+
+error_t parsing_format(char* argv, config_t* cfg) {
+    char argument = 0;
+    char string[MAX_PATH] = {0};
+    sscanf(argv, "-%c=%s", &argument, string);
+    switch (argument) {
+        case 'N':
+            if (cfg->read_from_file == false)
+                return check_wrong_formart(
+                    sscanf(string, "%" PRId64, &cfg->point_num));
+        case 'F':
+            cfg->read_from_file = true;
+            strcpy(cfg->file_path, string);
+            return no_error;
+        case 'S':
+            return check_wrong_formart(
+                sscanf(string, "%" PRId64, &cfg->symmetry));
+        case 's':
+            cfg->use_seed = true;
+            return check_wrong_formart(sscanf(string, "%" PRIu64, &cfg->seed));
         default:
-            *mode = 1;
-            fprintf(stderr, "参数错误，已忽略假设，并将此参数设置为默认值1\n假设对称性暂时只支持：1不对称 2中心对称\n其中中心对称要求节点数为2的倍数才能启用\n");
-            break;
+            return unknow_argument;
     }
-    return 0;
 }
 
-void output_mma(object_t* object) {
-    char filename[127] = {0};
-    sprintf(filename, "%u_%lf_mma.txt", object->point_num, object->angle);
-    FILE* fp = fopen(filename, "wb");
-    fprintf(fp, "point={");
-    for (int i = 0; i < object->point_num; i++) {
-        fprintf(fp, "{%1.16lf,%1.16lf,%1.16lf}%c", object->pos[i].x, object->pos[i].y, object->pos[i].z, (i == object->point_num - 1) ? '}' : ',');
-    }
-    fclose(fp);
-    free(object->pos);
-}
+int main(int argc, char* argv[]) {
+    config_t cfg = {{0}, 0, -1, 1, false, false};
+    error_t error_code = no_error;
+    panic(check_no_argument(argc));
+    panic(check_illegal_symmetry(cfg.symmetry));
 
-void output_Aqi(object_t* object) {
-    char filename[127] = {0};
-    sprintf(filename, "%u_%lf_Aqi.txt", object->point_num, object->angle);
-    FILE* fp = fopen(filename, "wb");
-    fprintf(fp, "AqiDYBP=");
-    for (int i = 0; i < object->point_num; i++) {
-        fprintf(fp, "%1.16lf,%1.16lf,%1.16lf%c", object->pos[i].x, object->pos[i].y, object->pos[i].z, (i == object->point_num - 1) ? '|' : '\0');
-    }
-    fclose(fp);
-    free(object->pos);
-}
+    for (int i = 1; i < argc; i++)
+        panic(parsing_format(argv[i], &cfg));
 
-void output_csv(object_t* object) {
-    char filename[127] = {0};
-    sprintf(filename, "%u_%lf.csv", object->point_num, object->angle);
-    FILE* fp = fopen(filename, "wb");
-    for (int i = 0; i < object->point_num; i++) {
-        fprintf(fp, "%1.16lf,%1.16lf,%1.16lf\n", object->pos[i].x, object->pos[i].y, object->pos[i].z);
-    }
-    fclose(fp);
-    free(object->pos);
-}
+    f64x3_t* point = NULL;
 
-int main(void) {
-    // const i32x3_t version = {0, 2, 5};
-    time_t seed_0 = time(NULL);
-
-    uint32_t point_num;
-    uint64_t iteration;
-    uint32_t repeat;
-    uint32_t mode;
-
-    fprintf(stderr, "请依次输入节点数，迭代次数，重试次数，假设对称性，用空格分隔，然后按回车（示例：130 1000000 128 1）：\n");
-    scanf("%" PRIu32 " %" PRIu64 " %" PRIu32 " %" PRIu32, &point_num, &iteration, &repeat, &mode);
-    if (check_input(&point_num, &mode))
-        return -1;
-
-    double time_0 = omp_get_wtime();
-
-    object_t* object = calloc(repeat, sizeof(object_t));
-    for (int i = 0; i < repeat; i++) {
-        object_init(&object[i], iteration, point_num);
-    }
-
-    for (int i = 0; i < repeat; i++) {
-        pcg32_random_t rng = {0, seed_0 + i};
-        switch (mode) {
-            case 2:
-                for (int j = 0; j < object[i].point_num / 2; j++) {
-                    sphere_point_picking(&(object[i].pos[2 * j]), &rng);
-                    f64x3_mov(&(object[i].pos[2 * j + 1]), &(object[i].pos[2 * j]));
-                    f64x3_neg(&(object[i].pos[2 * j + 1]));
-                }
-                break;
-            default:
-                for (int j = 0; j < object[i].point_num; j++) {
-                    sphere_point_picking(&(object[i].pos[j]), &rng);
-                }
-                break;
-        }
-    }
-
-#pragma omp parallel for
-    for (int i = 0; i < repeat; i++) {
-        object[i].angle = tammes(object[i].pos, object[i].point_num, object[i].iteration, mode);
-        fprintf(stderr, "线程%4d优化完毕，最小夹角=%1.6lf\n", i, object[i].angle);
-    }
-
-    double adv = 0.0;
-    uint32_t best_index = 0;
-    for (int i = 0; i < repeat; i++) {
-        adv += object[i].angle;
-        if (object[i].angle > object[best_index].angle)
-            best_index = i;
-    }
-    adv /= repeat;
-
-    double time_1 = omp_get_wtime();
-    double time = time_1 - time_0;
-    fprintf(stderr, "所有%" PRIu32 "个线程优化完毕，平均%lf，用时%lfs，被最大化的最小夹角=%1.16lf\n", repeat, adv, time, object[best_index].angle);
-
-    // 将坐标输出为蓝图
-    output_csv(&object[best_index]);
-
-    for (int i = 0; i < repeat; i++) {
-        object_free(&object[i]);
+    if (cfg.read_from_file == true) {
+        FILE* fp = fopen(cfg.file_path, "r");
+        panic(check_file_no_found(fp));
+        panic(init_from_file(fp, point, &(cfg.point_num)));
+        panic(check_illegal_point_num(cfg.point_num));
+        fclose(fp);
+    } else {
+        panic(check_illegal_point_num(cfg.point_num));
+        pcg32_random_t pcg = {cfg.use_seed ? cfg.seed : get_timestamp(), 0};
+        panic(init_from_random(&pcg, point, &cfg.point_num));
     }
 
     return 0;
+
+need_help:
+    puts(HELP_DOC);
+    return error_code;
 }
