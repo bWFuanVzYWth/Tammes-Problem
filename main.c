@@ -5,6 +5,7 @@
 #include <time.h>
 
 #include "random_point.h"
+#include "tammes.h"
 
 typedef enum error_type {
     no_error = 0,
@@ -45,6 +46,8 @@ char* err_tex[] = {
 
 #define ERROR_DOC "!!! Unable to start: %s !!!\n"
 
+#define TIME_TEX "Finish in %lf sec."
+
 #else  // Chinese
 
 #define HELP_DOC \
@@ -73,6 +76,8 @@ char* err_tex[] = {
 
 #define ERROR_DOC "!!! 无法启动: %s !!!\n"
 
+#define TIME_TEX "用时 %lf sec."
+
 #endif
 
 #define panic(err)                                    \
@@ -91,8 +96,8 @@ typedef enum bool_type { false = 0, true = 1 } bool;
 typedef struct config_type {
     char file_path[MAX_PATH];
     uint64_t seed;
-    int64_t point_num;
-    int64_t symmetry;
+    int32_t point_num;
+    int32_t symmetry;
     bool use_seed;
     bool read_from_file;
 } config_t;
@@ -103,7 +108,7 @@ uint64_t get_timestamp(void) {
     return (uint64_t)t.tv_sec * 1000000000 + (uint64_t)t.tv_nsec;
 }
 
-error_t init_from_file(FILE* fp, f64x3_t** point, int64_t* point_num) {
+error_t init_from_file(FILE* fp, f64x3_t** point, int32_t* point_num) {
     (*point_num) = 0;
     f64x3_t tmp;
     while (fscanf(fp, "%lf,%lf,%lf", &tmp.x, &tmp.y, &tmp.z) == 3) {
@@ -116,30 +121,40 @@ error_t init_from_file(FILE* fp, f64x3_t** point, int64_t* point_num) {
     return no_error;
 }
 
-error_t init_from_random(pcg32_random_t* pcg, f64x3_t** point, int64_t point_num) {
+error_t init_from_random(pcg32_random_t* pcg, f64x3_t** point, int32_t point_num) {
     (*point) = (f64x3_t*)realloc((*point), sizeof(f64x3_t) * point_num);
     if ((*point) == NULL)
         return out_of_memory;
-    for (int i = 0; i < point_num; i++)
+    for (int32_t i = 0; i < point_num; i++)
         sphere_point_picking(&(*point)[i], pcg);
     return no_error;
 }
 
-void dump_to_csv(FILE* fpw, f64x3_t* point, int64_t point_num) {
-    for (int i = 0; i < point_num; i++) {
+void dump_to_csv(FILE* fpw, f64x3_t* point, int32_t point_num) {
+    for (int32_t i = 0; i < point_num; i++) {
         fprintf(fpw, "%1.18lf,%1.18lf,%1.18lf\n", point[i].x, point[i].y, point[i].z);
     }
+}
+
+void dump_to_mma(FILE* fpw, f64x3_t* point, int32_t point_num) {
+    fprintf(fpw, "{");
+    for (int32_t i = 0; i < point_num; i++) {
+        fprintf(fpw, "{%1.18lf,%1.18lf,%1.18lf}\n", point[i].x, point[i].y, point[i].z);
+        if (i < point_num - 1)
+            fprintf(fpw, ",");
+    }
+    fprintf(fpw, "}");
 }
 
 error_t check_no_argument(int argc) {
     return argc >= 2 ? no_error : no_argument;
 }
 
-error_t check_illegal_point_num(int64_t point_num) {
+error_t check_illegal_point_num(int32_t point_num) {
     return point_num >= 2 ? no_error : illegal_point_num;
 }
 
-error_t check_illegal_symmetry(int64_t symmetry) {
+error_t check_illegal_symmetry(int32_t symmetry) {
     return (symmetry == 1 || symmetry == 2) ? no_error : illegal_symmetry;
 }
 
@@ -158,14 +173,14 @@ error_t parsing_format(char* argv, config_t* cfg) {
     switch (argument) {
     case 'N':
         if (cfg->read_from_file == false)
-            return check_wrong_formart(sscanf(string, "%" PRId64, &cfg->point_num));
+            return check_wrong_formart(sscanf(string, "%" PRId32, &cfg->point_num));
     case 'F':
         cfg->read_from_file = true;
         strcpy(cfg->file_path, string);
         return no_error;
     case 'M':
         return check_wrong_formart(
-            sscanf(string, "%" PRId64, &cfg->symmetry));
+            sscanf(string, "%" PRId32, &cfg->symmetry));
     case 'S':
         cfg->use_seed = true;
         return check_wrong_formart(sscanf(string, "%" PRIu64, &cfg->seed));
@@ -198,10 +213,15 @@ int main(int argc, char* argv[]) {
         panic(init_from_random(&pcg, &point, cfg.point_num));
     }
 
-    // tammes();
+    uint64_t start_timestamp = get_timestamp();
+    tammes(point, cfg.point_num);
+    uint64_t end_timestamp = get_timestamp();
+    fprintf(stderr, TIME_TEX, (double)(end_timestamp - start_timestamp) / 1000000000.0);
 
+    // TODO 多种输出格式
     FILE* fpw = fopen("tmp.csv", "wb");
-    dump_to_csv(fpw, point, cfg.point_num);
+    // dump_to_csv(fpw, point, cfg.point_num);
+    dump_to_mma(fpw, point, cfg.point_num);
     fclose(fpw);
 
     return 0;
