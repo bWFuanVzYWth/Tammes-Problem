@@ -25,12 +25,13 @@ typedef enum error_type {
 Usage: tammes.exe [arg1] [arg2] ...\n\
 Arguments:\n\
 -N=<num>    Number of points, n>=2. Required if no -F.\n\
+-I=<num>    Optimization iteration. Higher is better but slower.\n\
 -F=<path>   Initialization points by reading from file instead of random.\n\
 -M=<1,2>    Assume that the points has m-fold symmetry. default: 1.\n\
 -S=<num>    Specify random seed. default: current timestamp, in ns.\n\
 Examples:\n\
 tammes.exe -N=130\n\
-tammes.exe -N=130 -M=2 -S=114514\n\
+tammes.exe -N=130 -M=2 -S=1000000\n\
 tammes.exe -F=C:\\tammes\\input.csv"
 
 char* err_tex[] = {
@@ -54,13 +55,14 @@ char* err_tex[] = {
     "https://github.com/bWFuanVzYWth/Tammes-Problem v3.0 MIT license\n\
 使用方式: tammes.exe [参数1] [参数2] ...\n\
 参数:\n\
--N=<num>    球面上点的个数, N>=2. 必填，除非启用-F选项\n\
--F=<path>   从文件读取初始坐标，而不是从随机状态开始\n\
--M=<1,2>    假定点的排列具有M重对称性. 只能填1或2, 默认值=1\n\
--S=<num>    指定伪随机种子. 默认值=精确到纳秒的当前时间.\n\
+-N=<num>    球面上点的个数, N>=2. 必填, 除非启用-F选项\n\
+-I=<num>    进行I轮优化迭代, 迭代次数越高收敛越好, 也越慢\n\
+-F=<path>   从文件读取初始坐标, 而不是从随机状态开始\n\
+-M=<1,2>    假定点的排列具有M重对称性, 只能填1或2, 默认值=1\n\
+-S=<num>    指定伪随机种子, 默认值=精确到纳秒的当前时间\n\
 示例:\n\
 tammes.exe -N=130\n\
-tammes.exe -N=130 -M=2 -S=114514\n\
+tammes.exe -N=130 -M=2 -S=1000000\n\
 tammes.exe -F=C:\\tammes\\input.csv"
 
 char* err_tex[] = {
@@ -94,12 +96,13 @@ char* err_tex[] = {
 typedef enum bool_type { false = 0, true = 1 } bool;
 
 typedef struct config_type {
-    char file_path[MAX_PATH];
     uint64_t seed;
+    int64_t iteration;
     int32_t point_num;
     int32_t symmetry;
     bool use_seed;
     bool read_from_file;
+    char file_path[MAX_PATH];
 } config_t;
 
 uint64_t get_timestamp(void) {
@@ -174,13 +177,14 @@ error_t parsing_format(char* argv, config_t* cfg) {
     case 'N':
         if (cfg->read_from_file == false)
             return check_wrong_formart(sscanf(string, "%" PRId32, &cfg->point_num));
+    case 'I':
+        return check_wrong_formart(sscanf(string, "%" PRId64, &cfg->iteration));
     case 'F':
         cfg->read_from_file = true;
         strcpy(cfg->file_path, string);
         return no_error;
     case 'M':
-        return check_wrong_formart(
-            sscanf(string, "%" PRId32, &cfg->symmetry));
+        return check_wrong_formart(sscanf(string, "%" PRId32, &cfg->symmetry));
     case 'S':
         cfg->use_seed = true;
         return check_wrong_formart(sscanf(string, "%" PRIu64, &cfg->seed));
@@ -190,7 +194,8 @@ error_t parsing_format(char* argv, config_t* cfg) {
 }
 
 int main(int argc, char* argv[]) {
-    config_t cfg = { {0}, 0, -1, 1, false, false };
+    // TODO 可读性
+    config_t cfg = { 0, 1000000, -1, 1, false, false,{0} };
     error_t error_code = no_error;
     panic(check_no_argument(argc));
     panic(check_illegal_symmetry(cfg.symmetry));
