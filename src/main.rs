@@ -2,7 +2,8 @@ use nalgebra::Vector3;
 use rand::{self, Rng};
 use tammes::{lower_bound_of_distance, Grid};
 
-#[must_use] pub fn generate_points_on_sphere() -> Vector3<f64> {
+#[must_use]
+pub fn generate_points_on_sphere() -> Vector3<f64> {
     let mut rng = rand::rng();
     let z: f64 = rng.random_range(-1.0..1.0);
     let theta: f64 = rng.random_range(0.0..std::f64::consts::TAU);

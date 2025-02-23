@@ -8,12 +8,14 @@ pub struct Grid {
     pub cells: Vec<Vec<Vector3<f64>>>,
 }
 
-#[must_use] pub fn lower_bound_of_distance(n: usize) -> f64 {
+#[must_use]
+pub fn lower_bound_of_distance(n: usize) -> f64 {
     (4.0 - 1.0 / ((PI * n as f64) / (6 * (n - 2)) as f64).powi(2).sin()).sqrt()
 }
 
 impl Grid {
-    #[must_use] pub fn new_from_vec(points: &Vec<Vector3<f64>>) -> Self {
+    #[must_use]
+    pub fn new_from_vec(points: &[Vector3<f64>]) -> Self {
         let lower_bound_of_distance = lower_bound_of_distance(points.len());
         let grid_size = (2.0 / lower_bound_of_distance).floor() as usize;
         let cell_size = 2.0 / (grid_size as f64);
@@ -26,7 +28,8 @@ impl Grid {
         grid
     }
 
-    #[must_use] pub fn to_vec(&self) -> Vec<Vector3<f64>> {
+    #[must_use]
+    pub fn to_vec(&self) -> Vec<Vector3<f64>> {
         let mut vec = Vec::new();
         self.cells.iter().for_each(|cell| {
             vec.extend(cell);
@@ -80,17 +83,18 @@ impl Grid {
         closest
     }
 
-    #[must_use] pub fn iterate(&self, l: f64) -> Self {
+    #[must_use]
+    pub fn iterate(&self, l: f64) -> Self {
         let mut grid = Self::empty_from_grid(self);
         self.cells.iter().for_each(|cell| {
             for current in cell {
-                grid.push(match self.find_closest_non_overlap(current) {
-                    Some(closest) => {
-                        let direction = (current - closest).normalize();
-                        (current + direction * l).normalize()
-                    }
-                    None => *current,
-                });
+                grid.push(
+                    self.find_closest_non_overlap(current)
+                        .map_or(*current, |closest| {
+                            let direction = (current - closest).normalize();
+                            (current + direction * l).normalize()
+                        }),
+                );
             }
         });
         grid
