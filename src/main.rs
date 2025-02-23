@@ -12,8 +12,8 @@ pub fn generate_points_on_sphere() -> Vector3<f64> {
 }
 
 fn main() {
-    const POINTS_NUM: usize = 2000;
-    const ITERATIONS: usize = 1000;
+    const POINTS_NUM: usize = 130;
+    const ITERATIONS: usize = 10000;
 
     let points = (0..POINTS_NUM)
         .map(|_| generate_points_on_sphere())
@@ -23,9 +23,8 @@ fn main() {
 
     let mut grid = Grid::new_from_vec(&points);
     for i in 0..ITERATIONS {
-        let l = (lower_bound_of_distance) * (ITERATIONS - i) as f64 * (1.0 / (ITERATIONS as f64));
+        let l = lower_bound_of_distance * (-53.0 * (i as f64) * (1.0 / (ITERATIONS as f64))).exp2();
         grid = grid.iterate(l);
-
     }
 
     for point in grid.to_vec() {
