@@ -13,7 +13,7 @@ pub fn generate_points_on_sphere() -> Vector3<f64> {
 
 fn main() {
     const POINTS_NUM: usize = 2000;
-    const ITERATIONS: usize = 10000;
+    const ITERATIONS: usize = 1000;
 
     let points = (0..POINTS_NUM)
         .map(|_| generate_points_on_sphere())

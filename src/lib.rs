@@ -71,7 +71,7 @@ impl Grid {
                     .iter()
                     .for_each(|point| {
                         let cos_theta = current.dot(point);
-                        if cos_theta > max_cos_theta && cos_theta < 1.0 - 4.0 * f64::EPSILON {
+                        if cos_theta > max_cos_theta && point != current {
                             (closest, max_cos_theta) = (Some(point), cos_theta)
                         }
                     })
