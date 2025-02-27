@@ -60,6 +60,7 @@ impl Grid {
         (hash_x, hash_y)
     }
 
+    // 几乎所有时间的花在这个函数里了
     fn find_closest_non_overlap(&self, current: &Vector3<f64>) -> Option<&Vector3<f64>> {
         let (hash_x, hash_y) = self.hash(current);
         let x_from = hash_x.saturating_sub(1);
